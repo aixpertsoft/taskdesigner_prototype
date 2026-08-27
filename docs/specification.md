@@ -1,0 +1,465 @@
+# Task Request — technical specification
+
+**Jira:** AIXDEV-23409
+
+File paths below refer to the [`aixpertsoft/verios`](https://github.com/aixpertsoft/verios) and
+[`aixpertsoft/aixboms`](https://github.com/aixpertsoft/aixboms) repositories. They are written as
+plain paths rather than links because branch layouts move.
+
+Background and rationale are in [overview.md](overview.md); this document is the contract.
+
+---
+
+## Scope decisions
+
+1. **Not a replacement.** `de.comconsult.wf` stays. This is a second, simpler subsystem that
+   coexists with it.
+2. **Production home is a new BC4J subsystem** — `de.aixpertsoft.taskrequest`, generated from a
+   `models/*.json` + `genbc4j` run. Not an extension of `proma`.
+3. **The POC persists via a file-backed document endpoint** (the `/datasources` pattern), not
+   session storage. Same client code as production, and real cross-user semantics — so approvals are
+   demonstrable, which session storage cannot do.
+
+---
+
+## Reuse map — do not rebuild these
+
+| Requirement | Use this |
+| --- | --- |
+| `TaskDefinitionRegistry`, server-side Executor | `de.aixpertsoft.action.server`: `@Action(name,label,description,parameters,outParameters)` + `IAction.perform()`, `ActionRegistry.INSTANCE`, annotation-scanned discovery, `GET /actions`, `POST /actions/run` |
+| Task Configurator UI | `forms/core/command/serveractions/RunServerActionCommand.tsx` already builds a dialog from the declared `Parameter[]` |
+| Per-type registry shape | `client/datasource-designer/designer/datasourceTypeRegistry.tsx` — `{ id, label, description, icon, makeEmpty, Editor }`; feeds `util-ui/TilePickerDialog.tsx` free |
+| StatusWorkflow | `model/server/websocket/proma/WorkflowDefinitionDTO.ts` + `client/forms/components/ProjectStatusTransitionsDef/`, incl. `mandatoryAttributesPerStatus` and per-transition `StatusPermissionsDTO { roles[], creator/assigneePermissionMode }` |
+| Comments & change requests (JSON rich text) | TipTap v3 — `client/common/components/RichText/RichTextEditor.tsx`, `forms/components/CommentDef/`, stored as stringified TipTap JSON in a `JsonDomain` CLOB (see `proma/bc4j/Comment.xml`) |
+| Save / dirty / list / ACL chassis | `util-ui/EntityListPage.tsx`, `util-ui/useWorkbenchSaveBridge.ts`, `lib/util/restApi.ts` (`createEntityApi`, `createPermissionsApi`), `util-ui/permissions/openPermissionsDialog.ts` |
+| Shell & rail styling | `datasource-designer/designer/DatasourceDesignerShell.tsx` (~95 lines, the best template), `util-ui/designerRail.tsx`, `designerControls.tsx`, `designerStyles.ts` |
+| Execution log surface | `de.comconsult.audit.businesslogic` history loggers + `forms/components/HistoryTableDef/` |
+| Principal picker | `de.comconsult.admin.bc4j.CocoAdminRolesAndGroupsAndUsers` via `openViewDefTableDialog` |
+
+**Registry caution:** copy the *datasource* registry shape (one entry per type), not the dashboard
+widget one — the latter splits registration across `WidgetCatalog`, `RENDERERS`, `WIDGET_RUNTIMES`,
+an icon map and a `switch`, which is exactly the drift a real registry exists to eliminate.
+
+---
+
+## TaskAPI — client/server contract
+
+### Design principle: split the authoring surface from the authority surface
+
+The most important decision in the API, and what closes the security hole in the original
+requirements document.
+
+| Surface | Who owns it | How it is written |
+| --- | --- | --- |
+| **Authoring** — name, `data` values, task item list and their configs | the client | `POST /taskrequests` (whole-document save, optimistic-locked) |
+| **Authority** — approvals, status, execution state, logs | the **server only** | dedicated sub-resource endpoints; each re-checks rules and permissions |
+
+A document save carrying `approvals`, `status`, `taskItems[].status` or `executions` is **rejected
+with `IMMUTABLE_FIELD`**, not silently merged. You cannot approve your own request by PUTting JSON.
+
+### Three integrity mechanisms
+
+1. **`version`** — monotonic int on `TaskRequest`. Every save sends `baseVersion`; mismatch →
+   `409 STALE_VERSION`. Covers concurrent editing.
+2. **`taskConfigHash`** — SHA-256 over the canonical JSON of the ordered task item configs. Every
+   `Approval` records the hash it was given against. The `approvals` rule counts **only** approvals
+   whose hash equals the current one, so editing a task config invalidates prior sign-off. Without
+   this, approve → edit → execute is an open door.
+3. **Server-side gate re-evaluation** — `POST /taskrequests/{id}/execute` re-runs the full rule set
+   server-side before dispatching. The client's gate call is a hint for rendering; this is the
+   control.
+
+### Resources
+
+Base: `{restURL()}/…` → `https://{host}/aixboms/rest/…`. Bearer token via `authHeaders()`.
+
+**Task definition registry** — a thin projection over the existing `ActionRegistry`.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/taskdefinitions` | List available task types (id, label, description, icon, parameters) |
+| `GET` | `/taskdefinitions/{name}` | One definition, with its full `Parameter[]` |
+
+**Task request definitions** — document CRUD via `AbstractDocumentResource`.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/taskrequestdefs` | List metadata |
+| `GET` | `/taskrequestdefs/{id}` | Load `{ metadata, content }` |
+| `POST` | `/taskrequestdefs` | Create / update |
+| `DELETE` | `/taskrequestdefs/{id}` | Delete |
+| `GET` `PUT` | `/taskrequestdefs/{id}/permissions` | ACL (`createPermissionsApi`) |
+
+**Task requests** — document CRUD for the authoring surface, plus authority sub-resources.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/taskrequests?status=&definitionId=&requester=&awaitingMyApproval=` | Inbox list |
+| `GET` | `/taskrequests/{id}` | Load full request |
+| `POST` | `/taskrequests` | Create / save **authoring surface only** |
+| `DELETE` | `/taskrequests/{id}` | Delete |
+| `GET` `PUT` | `/taskrequests/{id}/permissions` | ACL |
+| `GET` | `/taskrequests/{id}/gate` | Rule evaluation — drives the gate box |
+| `POST` | `/taskrequests/{id}/approvals` | Add / replace **my** approval |
+| `DELETE` | `/taskrequests/{id}/approvals/mine` | Withdraw my approval |
+| `POST` | `/taskrequests/{id}/comments` | Add comment (TipTap JSON) |
+| `PATCH` `DELETE` | `/taskrequests/{id}/comments/{commentId}` | Edit / delete own comment |
+| `POST` | `/taskrequests/{id}/change-requests` | Raise a change request |
+| `PATCH` | `/taskrequests/{id}/change-requests/{crId}` | `{ resolved: boolean }` |
+| `POST` | `/taskrequests/{id}/transitions` | `{ toStatus }` — guarded by the status graph |
+| `POST` | `/taskrequests/{id}/execute` | Execute all, or a subset |
+| `GET` | `/taskrequests/{id}/executions?taskItemId=` | Execution log |
+
+Every mutating sub-resource returns the **refreshed `TaskRequestDTO`**, so the client never guesses
+at derived state (status, task item statuses, invalidated approvals, new version).
+
+### DTOs
+
+TypeScript shown; the Java DTOs in `de.aixpertsoft.taskrequest.dto` are the source of truth and the
+TS is generated by the existing `syncWithVerios` converter into
+`src/projects/model/server/taskrequest/`.
+
+```ts
+// ---------- registry ----------
+export interface TaskDefinitionDTO {
+  name: string;                 // @Action.name — the executor id
+  label: string;
+  description: string;
+  icon?: string;
+  parameters: ParameterDTO[];   // reused verbatim from de.aixpertsoft.action.dto
+}
+
+// ---------- definition ----------
+export interface TaskRequestDefinitionContentDTO {
+  apiVersion: 'aixboms.taskrequest/v1';
+  id: string;
+  name: string;
+  description?: string;
+  definitionVersion: number;               // stamped onto requests; see "definition drift"
+  statusWorkflow: WorkflowDefinitionDTO;   // reused from proma
+  supportedTaskDefinitions: string[];      // TaskDefinitionDTO.name[]
+  dataParameters: DataParameterDTO[];
+  executionRules: TaskRule[];
+  onError: 'STOP' | 'CONTINUE';            // execute-all failure policy
+}
+
+export interface DataParameterDTO {
+  name: string;
+  label: string;
+  type: 'string' | 'number' | 'boolean' | 'enum';
+  required: boolean;
+  defaultValue?: unknown;
+  enumValues?: string[];
+}
+
+// ---------- request ----------
+export type TaskItemStatus = 'NOT_RUN' | 'RUNNING' | 'SUCCEEDED' | 'FAILED';
+
+export interface TaskItemDTO {
+  id: string;
+  taskDefinitionName: string;
+  label: string;
+  config: Record<string, unknown>;   // validated against the TaskDefinition's Parameter[]
+  status: TaskItemStatus;            // server-owned
+  lastAttempt?: number;              // server-owned
+  lastError?: string;                // server-owned
+}
+
+export interface ApprovalDTO {
+  id: string;
+  userId: string;
+  displayName: string;
+  decision: 'APPROVED' | 'REJECTED';
+  comment?: string;
+  createdAt: string;                 // ISO-8601
+  taskConfigHash: string;            // what was approved
+  stale: boolean;                    // derived: hash !== request.taskConfigHash
+}
+
+export interface ChangeRequestDTO {
+  id: string; userId: string; displayName: string;
+  body: TipTapDocument;
+  resolved: boolean;
+  resolvedBy?: string; resolvedAt?: string;
+  createdAt: string;
+}
+
+export interface CommentDTO {
+  id: string; userId: string; displayName: string;
+  body: TipTapDocument;
+  createdAt: string; updatedAt?: string;
+}
+
+export interface TaskRequestContentDTO {
+  apiVersion: 'aixboms.taskrequest/v1';
+  id: string;
+  name: string;
+  definitionId: string;
+  definitionVersion: number;         // snapshot — which rules/graph this request is bound to
+  status: string;                    // server-owned
+  requester: string;                 // server-owned
+  createdAt: string;                 // server-owned
+  version: number;                   // optimistic lock, server-owned
+  taskConfigHash: string;            // server-computed
+  data: Record<string, unknown>;     // snapshot-copied from the definition at creation
+  taskItems: TaskItemDTO[];
+  approvals: ApprovalDTO[];          // server-owned
+  changeRequests: ChangeRequestDTO[];// server-owned
+  comments: CommentDTO[];            // server-owned
+}
+```
+
+### Rules
+
+**Do not use free-text TypeScript expressions.** That contradicts a written decision in
+`client/datasource-designer/README.md`, which removed user-authored JS because it is an RCE /
+stored-XSS-class capability, "typically an outright compliance/pentest blocker" for on-prem installs,
+and non-functional under the production CSP regardless (no `unsafe-eval`, no `blob:`).
+
+Both use cases the original document names are structured predicates, and neither is expressible in
+raw JSONata without an approval-quorum helper anyway. So the rule is data:
+
+```ts
+export type TaskRule =
+  | { kind: 'approvals'; min: number; roles?: string[]; excludeRequester?: boolean }
+  | { kind: 'noUnresolvedChangeRequests' }
+  | { kind: 'allTasksSucceeded' }
+  | { kind: 'data'; path: string; op: 'eq' | 'ne' | 'gt' | 'lt' | 'truthy'; value?: unknown }
+  | { kind: 'all' | 'any'; rules: TaskRule[] }
+  | { kind: 'not'; rule: TaskRule };
+```
+
+Evaluated by a pure function returning **per-rule reasons**, not just a boolean — the reasons are
+what the gate box renders:
+
+```ts
+export interface RuleContext {
+  data: Record<string, unknown>;
+  approvals: ApprovalDTO[]; changeRequests: ChangeRequestDTO[]; taskItems: TaskItemDTO[];
+  requester: string; currentUser: string;
+}
+export function evaluateRule(rule: TaskRule, ctx: RuleContext): GateRuleResult;
+```
+
+Mirrored in Java as `de.aixpertsoft.taskrequest.rules.RuleEvaluator` — **the Java one is the gate**;
+the TS one exists for rendering and for the definition editor's live preview. Both tested against
+the same fixture table, in both directions.
+
+A free-text `{ kind: 'expression'; jsonata }` arm is deliberately **deferred** until a server-side
+evaluator exists. Adding it client-only would reintroduce exactly the bypass this design closes.
+
+> The prototype's `evaluateRule()` / `evaluateGate()` in `index.html` implement this, minus the
+> composite `all` / `any` / `not` arms. It is the part worth porting.
+
+### Gate response
+
+```ts
+export interface GateRuleResult {
+  ruleIndex: number;
+  kind: TaskRule['kind'];
+  label: string;                 // "2 approvals from Administrator (not the requester)"
+  satisfied: boolean;
+  reason?: string;               // "1 of 2 — 1 dismissed because a task was edited"
+}
+export interface GateDTO {
+  canExecute: boolean;
+  taskConfigHash: string;        // echo — pass back to /execute
+  rules: GateRuleResult[];
+  blockedBy?: 'RULES' | 'PERMISSION' | 'STATUS' | 'NO_TASKS';
+}
+```
+
+### Execute
+
+```ts
+export interface ExecuteRequestDTO {
+  taskItemIds?: string[];         // omit = all
+  expectedTaskConfigHash: string; // TOCTOU guard — 409 if the request changed under you
+}
+export interface TaskExecutionResultDTO {
+  taskItemId: string; attempt: number;
+  outcome: 'SUCCEEDED' | 'FAILED' | 'SKIPPED';
+  startedAt: string; finishedAt: string; durationMs: number;
+  executedBy: string;
+  message?: string; detail?: string;   // BusinessLogicError text, stack excerpt
+}
+export interface ExecuteReplyDTO {
+  results: TaskExecutionResultDTO[];
+  request: TaskRequestContentDTO;      // refreshed
+}
+```
+
+**Server sequence for `POST /execute`:**
+
+```
+ 1. load request, check WRITE permission
+ 2. 409 STALE_VERSION      if expectedTaskConfigHash != current
+ 3. 403 RULE_NOT_SATISFIED if RuleEvaluator says no   ← the actual gate
+ 4. for each task item, in order:
+      mark RUNNING → ActionExecutor.run(@Action by name, config) → mark SUCCEEDED | FAILED
+      append a TaskExecutionLog row for the attempt, always
+      on FAILED: honour definition.onError (STOP | CONTINUE)
+ 5. return results + refreshed request
+```
+
+**Not transactional across task items.** Each task is its own transaction; a partial run is a real,
+representable state (`SUCCEEDED` + `FAILED` + `NOT_RUN` side by side). The original document is
+silent on this — it must be stated, because it is the difference between "Execute all" being a
+convenience and being a promise the system cannot keep. There is no compensation or rollback in the
+POC; re-run is the recovery path.
+
+### Errors
+
+`TaskApiErrorDTO { code, message, details? }` with HTTP status:
+
+| Code | Status | When |
+| --- | --- | --- |
+| `NOT_FOUND` | 404 | unknown id, or unreadable — existence must not leak, matching `JsonDocumentStorageService` |
+| `FORBIDDEN` | 403 | ACL denies, or not permitted for this status transition |
+| `STALE_VERSION` | 409 | `baseVersion` / `expectedTaskConfigHash` mismatch |
+| `IMMUTABLE_FIELD` | 400 | save tried to write approvals / status / execution state |
+| `INVALID_TRANSITION` | 400 | target status not reachable per the status graph |
+| `RULE_NOT_SATISFIED` | 403 | execute attempted while the gate is red — **carries the full `GateDTO` in `details`** |
+| `VALIDATION_FAILED` | 400 | task config does not satisfy the `Parameter[]`, or a mandatory data attribute is missing |
+| `TASK_EXECUTION_FAILED` | 200 | *not* an error response — a failed task is a normal `ExecuteReplyDTO` outcome |
+
+That last row matters: a task failing business logic is data, not an HTTP error. Only a refusal to
+*attempt* execution is an error.
+
+### Client surface
+
+`src/projects/client/task-request/task-api/TaskAPI.ts` — the **only** module that knows the
+transport.
+
+```ts
+const defs     = createEntityApi<TaskRequestDefinitionMetadataDTO, TaskRequestDefinitionContentDTO>({
+  path: 'taskrequestdefs', toMetadata: (d) => ({ id: d.id, name: d.name }) });
+const requests = createEntityApi<TaskRequestMetadataDTO, TaskRequestContentDTO>({
+  path: 'taskrequests',    toMetadata: (r) => ({ id: r.id, name: r.name, status: r.status }) });
+
+export const taskRequestDefinitionApi     = defs;
+export const taskRequestApi               = requests;
+export const taskRequestDefPermissionsApi = createPermissionsApi('taskrequestdefs');
+export const taskRequestPermissionsApi    = createPermissionsApi('taskrequests');
+
+export function listTaskDefinitions(): Promise<TaskDefinitionDTO[]>;
+export function getGate(id: string): Promise<GateDTO>;
+export function addApproval(id: string, decision: 'APPROVED' | 'REJECTED', comment?: string): Promise<TaskRequestContentDTO>;
+export function withdrawApproval(id: string): Promise<TaskRequestContentDTO>;
+export function addComment(id: string, body: TipTapDocument): Promise<TaskRequestContentDTO>;
+export function addChangeRequest(id: string, body: TipTapDocument): Promise<TaskRequestContentDTO>;
+export function resolveChangeRequest(id: string, crId: string, resolved: boolean): Promise<TaskRequestContentDTO>;
+export function transition(id: string, toStatus: string): Promise<TaskRequestContentDTO>;
+export function execute(id: string, req: ExecuteRequestDTO): Promise<ExecuteReplyDTO>;
+export function getExecutions(id: string, taskItemId?: string): Promise<TaskExecutionResultDTO[]>;
+```
+
+### Phase-2 transport note
+
+Entity CRUD on this platform normally goes over the WebSocket `LoadDataAction` / `QueryAction`, not
+REST. When the BC4J entities land, the REST document endpoints for `/taskrequests` are replaced — but
+`TaskAPI.ts` is the seam, so no UI component changes. The authority sub-resources (`/gate`,
+`/execute`, `/approvals`, `/transitions`) **stay REST** regardless: they are operations, not row CRUD,
+and they run server-side logic that `LoadDataAction` cannot express.
+
+---
+
+## POC scope
+
+Proves the hard parts — the registry seam, server-side rule gating, approval invalidation and the
+failure surface. HelloWorld proves nothing about execution and is only a placeholder, so ship **two**
+task definitions: `HelloWorld` and a deliberately failing `HelloWorldFail`, so the failure badge and
+the execution log are exercised for real.
+
+### Server — new module `de.aixpertsoft.taskrequest`
+
+- `HelloWorldAction` / `HelloWorldFailAction` — `@Action`-annotated `IAction` implementations with a
+  `greeting` `@Parameter`, discovered and run by the **existing** `ActionRegistry` / `ActionExecutor`.
+  No new execution engine.
+- `TaskRequestDefinitionResource` and `TaskRequestResource` — `extends AbstractDocumentResource` over
+  `JsonDocumentStorageService`, file-backed under `~/.aixboms/`. ~4 small classes each (DTO,
+  MetadataDTO, StorageService, Resource); pattern in `de.aixpertsoft.datasources`.
+- `TaskRequestOperationsResource` — the authority sub-resources.
+- `RuleEvaluator`, `TaskConfigHasher`, `ExecutionGuard`.
+
+### Client — `src/projects/client/task-request/`
+
+```
+dto/            TaskRequest, TaskRequestDefinition, TaskItem, Approval, ChangeRequest, Gate
+rules/          TaskRule.ts, evaluateRule.ts, RuleEditor.tsx
+registry/       taskDefinitionRegistry.tsx        (seeded from GET /taskdefinitions)
+definition/     TaskRequestDefinitionShell.tsx    (from DatasourceDesignerShell)
+                StatusWorkflowPanel.tsx           (reuse ProjectStatusTransitionsDef)
+                SupportedTasksPanel.tsx, DataParamsPanel.tsx, RulesPanel.tsx
+request/        TaskRequestEditor.tsx
+                TaskItemList.tsx, ApprovalPanel.tsx, ChangeRequestList.tsx,
+                CommentThread.tsx, ExecuteBar.tsx, ExecutionLogDialog.tsx
+launcher/       TaskRequestLaunchpad.tsx, TaskRequestListPage.tsx, InboxPage.tsx
+task-api/       TaskAPI.ts
+```
+
+Register a `TaskRequestPackage` in `src/app/PackageInitializer.ts` plus a navi Activity and Admin
+menu entry, mirroring `AixSoNaviDashboardDesignerActivity.xml`.
+
+### Definition drift
+
+`data` is snapshot-copied at creation, but rules, status graph and supported tasks are referenced by
+type — so editing a definition can silently un-approve an in-flight request. Hence
+`definitionVersion` on both sides: a request is bound to the version it was created from, and
+definition edits bump it. Requests on an older version keep their original rules until explicitly
+migrated.
+
+---
+
+## Explicit non-goals for the POC
+
+Notifications; assignment and due dates; asynchronous / long-running tasks (the API here is
+synchronous — real provisioning takes minutes, and this will need revisiting); transactionality
+across "Execute all"; the JSONata expression rule arm; migration of anything from `de.comconsult.wf`.
+
+---
+
+## Phase 2 — BC4J
+
+Add `Server/ApplicationSuite/Admin/Basis-DB/models/taskrequest.json` and run
+`gradlew genbc4j -Pfile=taskrequest.json`. Budget for scale: the 3-entity `proma.json` generated
+~110 files (BC4J XML, Liquibase, forms, aspects, activities, LOVs, members, menus, icons).
+
+```
+TaskRequest  ──1:N──▶  TaskItem  ──1:N──▶  TaskExecutionLog
+             ──1:N──▶  Approval
+             ──1:N──▶  ChangeRequest
+             ──1:N──▶  Comment
+```
+
+Task config, `data` and rules as `"type": "JSON"` (`JsonDomain`) columns; **status, type, requester,
+dates and outcome as real columns** — the inbox filters and reports on those, and querying JSON CLOBs
+for them is painful. `TaskExecutionLog` should follow the platform's polymorphic
+`RefObjType` / `RefObjNr` / `RefObjId` convention.
+
+---
+
+## Verification
+
+1. `yarn lint <paths>` and `yarn lint-ts` from the verios root.
+2. `yarn test run src/projects/client/task-request/rules/__tests__` — table-driven tests for
+   `evaluateRule`, including both cases named in the original document.
+3. Java: `RuleEvaluatorTest` sharing the **same fixture table** as the TS tests, asserting parity in
+   both directions; `HelloWorldActionTest` following `ActionExecutorTest` / `ActionRegistryTest`.
+4. End-to-end in the running app:
+   - Admin menu → Task Request Definitions → create one with `HelloWorld` supported, a status graph,
+     one data param `goodToGo`, and rule
+     `approvals{ min: 2, roles: ['Administrator'], excludeRequester: true }`.
+   - New Task Request from it → add a HelloWorld task item → **Execute disabled**, gate shows
+     "0 of 2 approvals".
+   - Approve as two different Administrator users → gate green → Execute → greeting on server
+     `System.out`, execution log populated.
+   - **Bypass test** — with the gate red, call `POST /taskrequests/{id}/execute` directly. Must return
+     `403 RULE_NOT_SATISFIED`. *The single most important assertion in the POC.*
+   - **Immutable-field test** — `POST /taskrequests` with a hand-written `approvals` array. Must
+     return `400 IMMUTABLE_FIELD`.
+   - **Stale-approval test** — approve to green, then edit a task config. Approvals must flip to
+     `stale: true` and Execute must re-disable.
+   - **Concurrency test** — two tabs, save from both. Second must get `409 STALE_VERSION`.
+   - Add `HelloWorldFail` → execute all → "Failed execution" badge, `onError: STOP` leaves later
+     tasks `NOT_RUN`, log dialog shows both attempts.

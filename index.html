@@ -1,0 +1,1450 @@
+<title>Task Request Prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+
+<style>
+:root{
+  --ground:#F5F7F9; --surface:#FFFFFF; --surface-2:#EEF1F5; --surface-3:#E4E9EF;
+  --border:#DCE3EA; --border-strong:#BFC9D4;
+  --ink:#131A21; --ink-2:#4A5765; --ink-3:#78858F;
+  --accent:#1B5FA8; --accent-ink:#FFFFFF; --accent-soft:#E8F0F8; --accent-line:#A9C6E4;
+  --ok:#1B7A4B; --ok-soft:#E3F2EA; --ok-line:#A8D6BE; --on-ok:#FFFFFF;
+  --warn:#8A6317; --warn-soft:#F7F0DC; --warn-line:#DCC489;
+  --bad:#A83B22; --bad-soft:#F9EAE5; --bad-line:#E3B3A2;
+  --shadow-1:0 1px 2px rgba(19,26,33,.06);
+  --shadow-2:0 2px 4px rgba(19,26,33,.06),0 8px 24px rgba(19,26,33,.08);
+  --shadow-3:0 8px 16px rgba(19,26,33,.10),0 24px 56px rgba(19,26,33,.18);
+  --r:6px; --r-lg:10px;
+  --sans:"IBM Plex Sans",-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,"Cascadia Mono","Consolas",monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#0E1317; --surface:#161D23; --surface-2:#1D262E; --surface-3:#26313A;
+    --border:#2A343D; --border-strong:#3D4A56;
+    --ink:#E3E9EE; --ink-2:#A5B2BE; --ink-3:#7A8792;
+    --accent:#5B9BE8; --accent-ink:#0B1015; --accent-soft:#17242F; --accent-line:#2F4D6B;
+    --ok:#4FBE85; --ok-soft:#122319; --ok-line:#255E42; --on-ok:#0B1015;
+    --warn:#D8AE5A; --warn-soft:#241E11; --warn-line:#5C4A22;
+    --bad:#E47B5C; --bad-soft:#291712; --bad-line:#633324;
+    --shadow-1:0 1px 2px rgba(0,0,0,.4);
+    --shadow-2:0 2px 4px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.45);
+    --shadow-3:0 8px 16px rgba(0,0,0,.5),0 24px 56px rgba(0,0,0,.6);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0E1317; --surface:#161D23; --surface-2:#1D262E; --surface-3:#26313A;
+  --border:#2A343D; --border-strong:#3D4A56;
+  --ink:#E3E9EE; --ink-2:#A5B2BE; --ink-3:#7A8792;
+  --accent:#5B9BE8; --accent-ink:#0B1015; --accent-soft:#17242F; --accent-line:#2F4D6B;
+  --ok:#4FBE85; --ok-soft:#122319; --ok-line:#255E42; --on-ok:#0B1015;
+  --warn:#D8AE5A; --warn-soft:#241E11; --warn-line:#5C4A22;
+  --bad:#E47B5C; --bad-soft:#291712; --bad-line:#633324;
+  --shadow-1:0 1px 2px rgba(0,0,0,.4);
+  --shadow-2:0 2px 4px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.45);
+  --shadow-3:0 8px 16px rgba(0,0,0,.5),0 24px 56px rgba(0,0,0,.6);
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--ground); color:var(--ink);
+  font-family:var(--sans); font-size:14px; line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+/* ---------- app shell ---------- */
+.app{min-height:100vh;display:flex;flex-direction:column}
+.topbar{
+  display:flex;align-items:center;gap:16px;padding:0 16px;height:52px;
+  background:var(--surface);border-bottom:1px solid var(--border);
+  position:sticky;top:0;z-index:40;
+}
+.brand{display:flex;align-items:center;gap:9px;font-weight:600;letter-spacing:-.01em}
+.brand .mark{
+  width:24px;height:24px;border-radius:5px;background:var(--accent);color:var(--accent-ink);
+  display:grid;place-items:center;flex:none;
+}
+.brand .sub{color:var(--ink-3);font-weight:400;font-size:12px;
+  padding-left:10px;margin-left:2px;border-left:1px solid var(--border)}
+.topnav{display:flex;gap:2px;margin-left:8px}
+.topnav button{
+  background:none;border:0;padding:7px 11px;border-radius:var(--r);color:var(--ink-2);
+  cursor:pointer;font-weight:500;
+}
+.topnav button:hover{background:var(--surface-2);color:var(--ink)}
+.topnav button[aria-current="true"]{background:var(--accent-soft);color:var(--accent)}
+.spacer{flex:1}
+
+.userswitch{display:flex;align-items:center;gap:8px}
+.userswitch>span{font-size:12px;color:var(--ink-3);white-space:nowrap}
+.avatars{display:flex;gap:3px;background:var(--surface-2);padding:3px;border-radius:var(--r)}
+.avatar{
+  width:28px;height:28px;border-radius:5px;border:0;cursor:pointer;
+  background:transparent;color:var(--ink-3);font-size:11px;font-weight:600;
+  font-family:var(--mono);
+}
+.avatar:hover{background:var(--surface-3);color:var(--ink)}
+.avatar[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+.iconbtn{
+  background:none;border:1px solid transparent;border-radius:var(--r);
+  width:32px;height:32px;display:grid;place-items:center;cursor:pointer;color:var(--ink-2);
+}
+.iconbtn:hover{background:var(--surface-2);color:var(--ink)}
+
+.main{flex:1;padding:22px 16px 72px;max-width:1220px;margin:0 auto;width:100%}
+
+/* ---------- primitives ---------- */
+.btn{
+  display:inline-flex;align-items:center;gap:7px;padding:7px 13px;border-radius:var(--r);
+  border:1px solid var(--border-strong);background:var(--surface);color:var(--ink);
+  font-weight:500;cursor:pointer;white-space:nowrap;
+}
+.btn:hover:not(:disabled){background:var(--surface-2)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.primary:hover:not(:disabled){filter:brightness(1.08)}
+.btn.go{background:var(--ok);border-color:var(--ok);color:var(--on-ok)}
+.btn.go:hover:not(:disabled){filter:brightness(1.08)}
+.btn.sm{padding:4px 9px;font-size:12.5px}
+.btn.ghost{border-color:transparent;background:transparent;color:var(--ink-2)}
+.btn.ghost:hover:not(:disabled){background:var(--surface-2);color:var(--ink)}
+
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--shadow-1)}
+.pill{
+  display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:20px;
+  font-size:11.5px;font-weight:600;letter-spacing:.02em;border:1px solid;
+  text-transform:uppercase;white-space:nowrap;
+}
+.pill.neutral{background:var(--surface-2);border-color:var(--border);color:var(--ink-2)}
+.pill.blue{background:var(--accent-soft);border-color:var(--accent-line);color:var(--accent)}
+.pill.ok{background:var(--ok-soft);border-color:var(--ok-line);color:var(--ok)}
+.pill.warn{background:var(--warn-soft);border-color:var(--warn-line);color:var(--warn)}
+.pill.bad{background:var(--bad-soft);border-color:var(--bad-line);color:var(--bad)}
+.chip{
+  display:inline-flex;align-items:center;gap:5px;padding:2px 4px 2px 8px;border-radius:20px;
+  background:var(--surface-2);border:1px solid var(--border);font-size:12px;color:var(--ink-2);
+}
+.chip button{background:none;border:0;cursor:pointer;color:var(--ink-3);
+  width:16px;height:16px;border-radius:50%;display:grid;place-items:center;padding:0;line-height:1}
+.chip button:hover{background:var(--surface-3);color:var(--ink)}
+
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:18px;flex-wrap:wrap}
+.tabs button{
+  background:none;border:0;border-bottom:2px solid transparent;padding:9px 12px;
+  color:var(--ink-2);cursor:pointer;font-weight:500;margin-bottom:-1px;
+}
+.tabs button:hover{color:var(--ink)}
+.tabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent);font-weight:600}
+.tabs .count{color:var(--ink-3);font-weight:400;font-family:var(--mono);font-size:12px}
+
+.field{display:flex;flex-direction:column;gap:5px}
+.field label{font-size:12px;font-weight:600;color:var(--ink-2);letter-spacing:.01em}
+.field .hint{font-size:11.5px;color:var(--ink-3)}
+input[type=text],input[type=number],select,textarea{
+  background:var(--surface);border:1px solid var(--border-strong);border-radius:var(--r);
+  padding:7px 9px;width:100%;
+}
+input[type=text]:focus,select:focus,textarea:focus{border-color:var(--accent);outline:none;
+  box-shadow:0 0 0 3px var(--accent-soft)}
+.req{color:var(--bad)}
+
+.empty{padding:26px;text-align:center;color:var(--ink-3);border:1px dashed var(--border-strong);
+  border-radius:var(--r-lg);font-size:13px}
+
+/* ---------- hint strip ---------- */
+.hints{
+  display:flex;gap:14px;align-items:flex-start;padding:12px 14px;margin-bottom:18px;
+  background:var(--accent-soft);border:1px solid var(--accent-line);border-radius:var(--r-lg);
+}
+.hints h3{margin:0 0 5px;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--accent)}
+.hints ol{margin:0;padding-left:17px;color:var(--ink-2);font-size:13px;display:grid;gap:3px}
+.hints ol b{color:var(--ink);font-weight:600}
+
+/* ---------- inbox ---------- */
+.page-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:14px;flex-wrap:wrap}
+.page-head h1{margin:0;font-size:21px;letter-spacing:-.02em;text-wrap:balance}
+.page-head p{margin:3px 0 0;color:var(--ink-3);font-size:13px}
+.filters{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+.filters select{width:auto;padding:5px 8px;font-size:13px}
+.rows{border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden;background:var(--surface)}
+.row{display:flex;gap:14px;padding:13px 15px;border-bottom:1px solid var(--border);cursor:pointer;align-items:flex-start}
+.row:last-child{border-bottom:0}
+.row:hover{background:var(--surface-2)}
+.row .rmain{flex:1;min-width:0}
+.row .rtitle{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.row .rtitle .id{font-family:var(--mono);font-size:12px;color:var(--ink-3)}
+.row .rtitle strong{font-weight:600;letter-spacing:-.01em}
+.row .rmeta{margin-top:4px;font-size:12.5px;color:var(--ink-3);display:flex;gap:7px;flex-wrap:wrap}
+.row .rmeta .dot{color:var(--border-strong)}
+.row .rside{text-align:right;font-size:12px;color:var(--ink-3);white-space:nowrap;padding-top:2px}
+
+/* ---------- request editor ---------- */
+.rq-head{margin-bottom:16px}
+.backlink{background:none;border:0;padding:0;color:var(--ink-3);cursor:pointer;font-size:13px;
+  display:inline-flex;align-items:center;gap:5px;margin-bottom:9px}
+.backlink:hover{color:var(--accent)}
+.rq-title{display:flex;align-items:center;gap:11px;flex-wrap:wrap}
+.rq-title h1{margin:0;font-size:22px;letter-spacing:-.02em}
+.rq-sub{margin-top:5px;color:var(--ink-3);font-size:13px;display:flex;gap:7px;flex-wrap:wrap;align-items:center}
+.rq-actions{display:flex;gap:8px;align-items:center;margin-left:auto}
+
+.rq-body{display:grid;grid-template-columns:minmax(0,1fr) 296px;gap:20px;align-items:start}
+@media (max-width:900px){.rq-body{grid-template-columns:1fr}}
+
+/* task cards */
+.tasklist{display:grid;gap:10px}
+.task{border:1px solid var(--border);border-radius:var(--r-lg);background:var(--surface);
+  box-shadow:var(--shadow-1);overflow:hidden}
+.task.failed{border-color:var(--bad-line)}
+.task-top{display:flex;gap:11px;padding:12px 13px;align-items:flex-start}
+.task-ico{width:30px;height:30px;border-radius:var(--r);background:var(--surface-2);
+  display:grid;place-items:center;color:var(--ink-2);flex:none}
+.task.failed .task-ico{background:var(--bad-soft);color:var(--bad)}
+.task-main{flex:1;min-width:0}
+.task-name{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.task-name strong{font-weight:600}
+.task-cfg{margin-top:5px;display:flex;gap:6px;flex-wrap:wrap}
+.kv{font-family:var(--mono);font-size:11.5px;background:var(--surface-2);border:1px solid var(--border);
+  padding:1px 6px;border-radius:4px;color:var(--ink-2)}
+.kv b{color:var(--ink);font-weight:500}
+.task-note{margin-top:7px;font-size:12.5px;color:var(--ink-3)}
+.task-err{margin-top:8px;padding:8px 10px;background:var(--bad-soft);border:1px solid var(--bad-line);
+  border-radius:var(--r);font-size:12.5px;color:var(--bad);display:flex;gap:7px;align-items:flex-start}
+.task-err .mono{font-size:11.5px}
+.task-acts{display:flex;gap:6px;padding:0 13px 11px;flex-wrap:wrap}
+
+.addbar{margin-top:12px}
+
+/* right rail */
+.rail{display:grid;gap:12px;position:sticky;top:72px}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);
+  box-shadow:var(--shadow-1);overflow:hidden}
+.panel-head{display:flex;align-items:center;justify-content:space-between;gap:8px;
+  padding:10px 13px;border-bottom:1px solid var(--border);background:var(--surface-2)}
+.panel-head h3{margin:0;font-size:11.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-2)}
+.panel-body{padding:11px 13px;display:grid;gap:9px}
+.approver{display:flex;align-items:center;gap:9px;font-size:13px}
+.approver .av{width:24px;height:24px;border-radius:5px;background:var(--surface-2);
+  display:grid;place-items:center;font-size:10.5px;font-weight:600;font-family:var(--mono);
+  color:var(--ink-2);flex:none;border:1px solid var(--border)}
+.approver.did .av{background:var(--ok-soft);border-color:var(--ok-line);color:var(--ok)}
+.approver.stale .av{background:var(--warn-soft);border-color:var(--warn-line);color:var(--warn)}
+.approver .who{flex:1;min-width:0}
+.approver .who small{display:block;color:var(--ink-3);font-size:11.5px}
+.cr{display:flex;gap:8px;font-size:13px;align-items:flex-start}
+.cr .body{flex:1;min-width:0}
+.cr .body small{display:block;color:var(--ink-3);font-size:11.5px;margin-top:1px}
+.cr.done .body>span{text-decoration:line-through;color:var(--ink-3)}
+
+/* gate */
+.gate{margin-top:20px;border:1px solid var(--border);border-radius:var(--r-lg);
+  background:var(--surface);box-shadow:var(--shadow-2);overflow:hidden}
+.gate.open{border-color:var(--ok-line)}
+.gate-head{padding:10px 14px;border-bottom:1px solid var(--border);background:var(--surface-2);
+  display:flex;align-items:center;gap:8px}
+.gate.open .gate-head{background:var(--ok-soft);border-color:var(--ok-line)}
+.gate-head h3{margin:0;font-size:11.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-2)}
+.gate.open .gate-head h3{color:var(--ok)}
+.gate-rules{padding:11px 14px;display:grid;gap:8px}
+.grule{display:flex;gap:9px;align-items:flex-start;font-size:13px}
+.grule .gi{flex:none;margin-top:1px}
+.grule.pass .gi{color:var(--ok)}
+.grule.fail .gi{color:var(--bad)}
+.grule .gt{flex:1}
+.grule .gr{color:var(--ink-3);font-size:12.5px;margin-top:1px}
+.gate-foot{padding:11px 14px;border-top:1px solid var(--border);display:flex;
+  align-items:center;gap:12px;justify-content:space-between;flex-wrap:wrap;background:var(--surface)}
+.gate-foot .hash{font-family:var(--mono);font-size:11px;color:var(--ink-3)}
+
+/* data tab */
+.formgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;
+  padding:15px;max-width:720px}
+.switch{display:flex;align-items:center;gap:9px;cursor:pointer;user-select:none}
+.switch input{position:absolute;opacity:0;pointer-events:none}
+.track{width:36px;height:20px;border-radius:20px;background:var(--surface-3);
+  border:1px solid var(--border-strong);position:relative;transition:background .15s,border-color .15s;flex:none}
+.track::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;
+  background:var(--surface);box-shadow:var(--shadow-1);transition:transform .15s}
+.switch input:checked+.track{background:var(--ok);border-color:var(--ok)}
+.switch input:checked+.track::after{transform:translateX(16px)}
+
+/* conversation */
+.thread{display:grid;gap:11px;padding:15px;max-width:760px}
+.msg{display:flex;gap:10px}
+.msg .av{width:28px;height:28px;border-radius:6px;background:var(--surface-2);border:1px solid var(--border);
+  display:grid;place-items:center;font-size:11px;font-weight:600;font-family:var(--mono);color:var(--ink-2);flex:none}
+.msg .bubble{flex:1;border:1px solid var(--border);border-radius:var(--r-lg);background:var(--surface);overflow:hidden}
+.msg .bhead{padding:6px 11px;background:var(--surface-2);border-bottom:1px solid var(--border);
+  font-size:12px;color:var(--ink-3);display:flex;gap:7px;align-items:center;flex-wrap:wrap}
+.msg .bhead b{color:var(--ink);font-weight:600}
+.msg .btext{padding:9px 11px;font-size:13.5px}
+.composer{display:grid;gap:8px;padding:13px;border:1px solid var(--border);border-radius:var(--r-lg);
+  background:var(--surface)}
+.composer .fake-toolbar{display:flex;gap:3px;padding-bottom:7px;border-bottom:1px solid var(--border);color:var(--ink-3)}
+.composer .fake-toolbar span{width:24px;height:22px;display:grid;place-items:center;border-radius:4px;font-size:12px}
+.composer textarea{border:0;padding:0;resize:vertical;min-height:56px}
+.composer textarea:focus{box-shadow:none}
+.composer .crow{display:flex;gap:8px;justify-content:flex-end}
+
+/* history */
+.hist{padding:6px 0}
+.hevent{display:flex;gap:11px;padding:9px 15px;font-size:13px;align-items:flex-start}
+.hevent .hdot{width:8px;height:8px;border-radius:50%;background:var(--border-strong);margin-top:6px;flex:none}
+.hevent .ht{flex:1}
+.hevent .hw{color:var(--ink-3);font-size:12px;white-space:nowrap;font-family:var(--mono)}
+
+/* ---------- definition editor ---------- */
+.def-body{display:grid;grid-template-columns:180px minmax(0,1fr);gap:20px;align-items:start}
+@media (max-width:820px){.def-body{grid-template-columns:1fr}}
+.sidenav{display:grid;gap:1px}
+.sidenav button{text-align:left;background:none;border:0;padding:8px 11px;border-radius:var(--r);
+  color:var(--ink-2);cursor:pointer;font-weight:500}
+.sidenav button:hover{background:var(--surface-2);color:var(--ink)}
+.sidenav button[aria-current="true"]{background:var(--accent-soft);color:var(--accent);font-weight:600}
+.graph{padding:16px;overflow-x:auto}
+.rulecard{border:1px solid var(--border);border-radius:var(--r);background:var(--surface);margin-bottom:9px}
+.rulecard-top{display:flex;gap:11px;align-items:center;padding:9px 11px}
+.rulecard-num{width:22px;height:22px;border-radius:5px;background:var(--surface-2);border:1px solid var(--border);
+  display:grid;place-items:center;font-family:var(--mono);font-size:11px;color:var(--ink-3);flex:none}
+.rulecard-body{padding:0 11px 11px 44px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:13px}
+.rulecard-body input[type=number]{width:60px}
+.rulecard-body select{width:auto}
+
+/* ---------- dialogs ---------- */
+.scrim{position:fixed;inset:0;background:rgba(14,19,23,.55);display:grid;place-items:center;
+  z-index:100;padding:20px;overflow:auto}
+.dialog{background:var(--surface);border:1px solid var(--border);border-radius:12px;
+  box-shadow:var(--shadow-3);width:100%;max-width:520px;overflow:hidden;margin:auto}
+.dialog.wide{max-width:680px}
+.dhead{display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--border)}
+.dhead h2{margin:0;font-size:15px;font-weight:600;letter-spacing:-.01em;flex:1}
+.dbody{padding:16px;display:grid;gap:14px;max-height:62vh;overflow:auto}
+.dfoot{display:flex;gap:8px;justify-content:flex-end;padding:12px 16px;border-top:1px solid var(--border);
+  background:var(--surface-2)}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(158px,1fr));gap:10px}
+.tile{border:1px solid var(--border-strong);border-radius:var(--r-lg);background:var(--surface);
+  padding:14px 12px;cursor:pointer;text-align:left;display:grid;gap:6px}
+.tile:hover{border-color:var(--accent);background:var(--accent-soft)}
+.tile .ti{width:30px;height:30px;border-radius:var(--r);background:var(--surface-2);
+  display:grid;place-items:center;color:var(--accent)}
+.tile b{font-weight:600}
+.tile small{color:var(--ink-3);font-size:12px;line-height:1.4}
+
+.logrow{border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.logrow+.logrow{margin-top:9px}
+.loghead{display:flex;gap:10px;align-items:center;padding:8px 11px;background:var(--surface-2);
+  border-bottom:1px solid var(--border);font-size:12.5px;flex-wrap:wrap}
+.loghead .mono{color:var(--ink-3);font-size:11.5px}
+.logbody{padding:9px 11px;font-family:var(--mono);font-size:11.5px;color:var(--ink-2);
+  white-space:pre-wrap;word-break:break-word}
+
+.toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:200;
+  background:var(--ink);color:var(--ground);padding:9px 15px;border-radius:20px;
+  box-shadow:var(--shadow-3);font-size:13px;font-weight:500;opacity:0;pointer-events:none;
+  transition:opacity .18s,transform .18s}
+.toast.on{opacity:1;transform:translateX(-50%) translateY(-3px)}
+
+.footnote{max-width:1220px;margin:26px auto 0;padding:14px 16px;color:var(--ink-3);font-size:12.5px;
+  border-top:1px solid var(--border);line-height:1.6}
+.footnote b{color:var(--ink-2)}
+
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+<div class="app">
+  <header class="topbar">
+    <div class="brand">
+      <span class="mark" aria-hidden="true">
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"
+             stroke-linecap="round" stroke-linejoin="round"><path d="M4 2v7a3 3 0 0 0 3 3h5"/><circle cx="4" cy="13" r="1.8"/><circle cx="4" cy="3" r="1.8" /><circle cx="13" cy="12" r="1.8"/></svg>
+      </span>
+      AixBOMS
+      <span class="sub">Task Requests</span>
+    </div>
+    <nav class="topnav" id="topnav">
+      <button data-nav="inbox">Requests</button>
+      <button data-nav="definition">Request types</button>
+    </nav>
+    <div class="spacer"></div>
+    <div class="userswitch">
+      <span>Viewing as</span>
+      <div class="avatars" id="avatars" role="group" aria-label="Switch demo user"></div>
+    </div>
+    <button class="iconbtn" id="themebtn" title="Toggle light / dark" aria-label="Toggle light or dark theme">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="3.2"/><path d="M8 1v1.6M8 13.4V15M15 8h-1.6M2.6 8H1M12.9 3.1l-1.1 1.1M4.2 11.8l-1.1 1.1M12.9 12.9l-1.1-1.1M4.2 4.2 3.1 3.1" stroke-linecap="round"/></svg>
+    </button>
+    <button class="iconbtn" id="resetbtn" title="Reset the prototype" aria-label="Reset the prototype">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"
+           stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 8a5.5 5.5 0 1 1-1.7-3.9"/><path d="M13.5 2v3.2h-3.2"/></svg>
+    </button>
+  </header>
+
+  <main class="main" id="screen"></main>
+
+  <div class="footnote">
+    <b>This is a clickable prototype, not the product.</b> Everything runs in your browser — the approval
+    quorum, the stale-approval check and the execution gate are the real logic from the specification, so the
+    Execute button is genuinely blocked until the rules pass. Task execution is simulated. Nothing is saved;
+    reload or press reset to start over.
+  </div>
+</div>
+
+<div id="modal"></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+"use strict";
+
+/* ============================ icons ============================ */
+const I = {
+  chevL:'<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3 5 8l5 5"/></svg>',
+  check:'<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 4.5 6.2 11.5 3 8.3"/></svg>',
+  cross:'<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 4 4 12M4 4l8 8"/></svg>',
+  warn:'<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.2 15 14H1L8 2.2Z"/><path d="M8 6.4v3.2M8 11.8v.1"/></svg>',
+  plus:'<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M8 3.5v9M3.5 8h9"/></svg>',
+  cable:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 1.5v3.2M5.6 1.5v3.2"/><rect x="1.9" y="4.7" width="4.8" height="3.4" rx="1"/><path d="M4.3 8.1v2.4a3 3 0 0 0 3 3h1.4"/><path d="M13 14.5v-3.2M10.4 14.5v-3.2"/><rect x="9.3" y="7.9" width="4.8" height="3.4" rx="1"/></svg>',
+  port:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1.6" y="3.4" width="12.8" height="9.2" rx="1.4"/><path d="M4.4 6.3v3.4M8 6.3v3.4M11.6 6.3v3.4"/></svg>',
+  hello:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.2 4.2h11.6v7.2H9.4L6.6 13.8v-2.4H2.2z"/></svg>',
+  log:'<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3.4 1.8h6l3.2 3.2v9.2H3.4z"/><path d="M9.2 1.9V5h3.2M5.6 8.4h4.8M5.6 10.9h3.2"/></svg>',
+  gear:'<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="2.1"/><path d="M8 1.4v1.5M8 13.1v1.5M14.6 8h-1.5M2.9 8H1.4M12.7 3.3l-1.1 1.1M4.4 11.6l-1.1 1.1M12.7 12.7l-1.1-1.1M4.4 4.4 3.3 3.3"/></svg>',
+  rerun:'<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 8a5.5 5.5 0 1 1-1.7-3.9"/><path d="M13.5 2v3.2h-3.2"/></svg>',
+  trash:'<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.6 4.2h10.8M6 4.2V2.8h4v1.4M4 4.2l.6 9h6.8l.6-9"/></svg>',
+  play:'<svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M4.5 2.8 12.8 8l-8.3 5.2z"/></svg>',
+  spin:'<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M8 1.8a6.2 6.2 0 1 1-4.4 1.8"/></svg>',
+};
+
+/* ============================ reference data ============================ */
+const USERS = {
+  mb:{id:'mb',name:'M. Browett',initials:'MB',roles:['NetOps']},
+  as:{id:'as',name:'A. Schmidt',initials:'AS',roles:['Administrator','NetOps']},
+  kw:{id:'kw',name:'K. Weber', initials:'KW',roles:['Administrator']},
+  jn:{id:'jn',name:'J. Novak',  initials:'JN',roles:['Viewer']},
+};
+const USER_ORDER = ['mb','as','kw','jn'];
+
+const TASK_DEFS = {
+  cablePatch:{
+    name:'cablePatch', label:'Cable Patch', icon:I.cable,
+    desc:'Connect or disconnect a cable between two ports.',
+    params:[
+      {name:'operation', label:'Operation', type:'enum', values:['Connect','Disconnect'], required:true},
+      {name:'sourcePort',label:'Source port',type:'text',required:true,placeholder:'RCK-R12-SW01 / Gi1/0/24'},
+      {name:'targetPort',label:'Target port',type:'text',required:true,placeholder:'PP-3 / Port 24'},
+      {name:'cableType', label:'Cable type', type:'enum', values:['Cat6a','OM4 LC-LC','OS2 LC-LC']},
+    ],
+    summary:c=>`${c.operation||'Connect'} · ${c.sourcePort||'—'} → ${c.targetPort||'—'}`,
+  },
+  portReserve:{
+    name:'portReserve', label:'Port Reservation', icon:I.port,
+    desc:'Reserve a switch port so nobody else can claim it.',
+    params:[
+      {name:'device',label:'Device',type:'text',required:true,placeholder:'RCK-R12-SW01'},
+      {name:'port',  label:'Port',  type:'text',required:true,placeholder:'Gi1/0/25'},
+      {name:'until', label:'Reserved until',type:'text',placeholder:'2026-09-30'},
+    ],
+    summary:c=>`${c.device||'—'} / ${c.port||'—'}`,
+  },
+  helloWorld:{
+    name:'helloWorld', label:'Hello World', icon:I.hello,
+    desc:'Prints a greeting on the server. Used to prove the plumbing.',
+    params:[{name:'greeting',label:'Greeting',type:'text',required:true,placeholder:'Guten Morgen'}],
+    summary:c=>`"${c.greeting||''}"`,
+  },
+};
+
+/* Ports already carrying a cable — a Connect onto one of these fails, like the real thing would. */
+const OCCUPIED_PORTS = ['PP-3 / Port 24'];
+
+const STATUS_TRANSITIONS = [
+  {from:'OPEN',      to:'APPROVED',  roles:['Administrator']},
+  {from:'OPEN',      to:'REJECTED',  roles:['Administrator']},
+  {from:'APPROVED',  to:'OPEN',      roles:['Administrator','NetOps']},
+  {from:'APPROVED',  to:'COMPLETED', roles:['Administrator','NetOps']},
+  {from:'REJECTED',  to:'OPEN',      roles:['Administrator']},
+  {from:'COMPLETED', to:'ARCHIVED',  roles:['Administrator']},
+];
+const STATUS_TONE = {OPEN:'blue',APPROVED:'ok',COMPLETED:'neutral',ARCHIVED:'neutral',REJECTED:'bad'};
+
+/* ============================ state ============================ */
+let S;
+function seed(){
+  return {
+    me:'mb',
+    screen:'inbox',
+    inboxTab:'awaiting',
+    requestTab:'tasks',
+    defSection:'workflow',
+    openRequestId:'TR-1042',
+    hintsDismissed:false,
+    seq:6,
+    definition:{
+      id:'cable-patch-order', name:'Cable Patch Order', onError:'STOP',
+      rules:[
+        {kind:'approvals', min:2, roles:['Administrator'], excludeRequester:true},
+        {kind:'noUnresolvedChangeRequests'},
+        {kind:'data', path:'goodToGo', op:'truthy'},
+      ],
+      dataParameters:[
+        {name:'goodToGo', label:'Change window confirmed', type:'boolean', defaultValue:false},
+        {name:'plannedDate', label:'Planned date', type:'text', defaultValue:'2026-09-03'},
+        {name:'changeTicket', label:'Change ticket', type:'text', defaultValue:'CHG-4471'},
+      ],
+    },
+    requests:[
+      {
+        id:'TR-1042', name:'Patch rack R12 uplinks', requester:'mb', status:'OPEN',
+        createdAt:'27.08.2026 08:41', version:4,
+        data:{goodToGo:false, plannedDate:'2026-09-03', changeTicket:'CHG-4471'},
+        taskItems:[
+          {id:'ti1', def:'cablePatch', status:'NOT_RUN', attempts:0, config:{
+            operation:'Connect', sourcePort:'RCK-R12-SW01 / Gi1/0/23', targetPort:'PP-3 / Port 23', cableType:'Cat6a'}},
+          {id:'ti2', def:'cablePatch', status:'NOT_RUN', attempts:0, config:{
+            operation:'Connect', sourcePort:'RCK-R12-SW01 / Gi1/0/24', targetPort:'PP-3 / Port 24', cableType:'Cat6a'}},
+        ],
+        approvals:[],
+        changeRequests:[
+          {id:'cr1', user:'kw', text:'Please confirm the change window with the DC team before we sign this off.',
+           resolved:false, at:'27.08.2026 09:02'},
+        ],
+        comments:[
+          {id:'c1', user:'mb', text:'Two uplinks for the new R12 switch. Ports 23 and 24 on patch panel PP-3.',
+           at:'27.08.2026 08:41'},
+        ],
+        history:[
+          {at:'27.08.2026 08:41', who:'mb', text:'created this request from Cable Patch Order'},
+          {at:'27.08.2026 09:02', who:'kw', text:'requested a change'},
+        ],
+        logs:[],
+      },
+      {
+        id:'TR-1039', name:'Decommission switch SW-07', requester:'mb', status:'APPROVED',
+        createdAt:'26.08.2026 14:12', version:7,
+        data:{goodToGo:true, plannedDate:'2026-08-29', changeTicket:'CHG-4468'},
+        taskItems:[
+          {id:'ti3', def:'cablePatch', status:'NOT_RUN', attempts:0, config:{
+            operation:'Disconnect', sourcePort:'RCK-R07-SW07 / Gi1/0/1', targetPort:'PP-1 / Port 4', cableType:'Cat6a'}},
+        ],
+        approvals:[
+          {id:'a1', user:'kw', decision:'APPROVED', at:'26.08.2026 15:30', hash:null},
+          {id:'a2', user:'as', decision:'APPROVED', at:'26.08.2026 15:44', hash:null},
+        ],
+        changeRequests:[], comments:[], logs:[],
+        history:[{at:'26.08.2026 14:12', who:'as', text:'created this request from Cable Patch Order'}],
+      },
+      {
+        id:'TR-1031', name:'Relocate patch panel PP-3', requester:'kw', status:'OPEN',
+        createdAt:'24.08.2026 11:05', version:11,
+        data:{goodToGo:true, plannedDate:'2026-08-28', changeTicket:'CHG-4455'},
+        taskItems:[
+          {id:'ti4', def:'portReserve', status:'SUCCEEDED', attempts:1, config:{
+            device:'RCK-R12-SW01', port:'Gi1/0/30', until:'2026-09-30'}},
+          {id:'ti5', def:'cablePatch', status:'FAILED', attempts:1, error:'Port PP-3 / Port 24 is already carrying cable CBL-88213.', config:{
+            operation:'Connect', sourcePort:'RCK-R12-SW01 / Gi1/0/30', targetPort:'PP-3 / Port 24', cableType:'Cat6a'}},
+        ],
+        approvals:[], changeRequests:[], comments:[], logs:[
+          {taskId:'ti4', attempt:1, at:'24.08.2026 11:40', by:'kw', outcome:'SUCCEEDED', ms:410,
+           detail:'Reserved RCK-R12-SW01 / Gi1/0/30 until 2026-09-30.'},
+          {taskId:'ti5', attempt:1, at:'24.08.2026 11:40', by:'kw', outcome:'FAILED', ms:1380,
+           detail:'BusinessLogicError: Port PP-3 / Port 24 is already carrying cable CBL-88213.\n  at de.aixpertsoft.taskrequest.actions.CablePatchAction.perform(CablePatchAction.java:118)'},
+        ],
+        history:[{at:'24.08.2026 11:05', who:'kw', text:'created this request from Cable Patch Order'}],
+      },
+    ],
+  };
+}
+
+/* ============================ helpers ============================ */
+const $  = (s,r=document)=>r.querySelector(s);
+const esc = s => String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const me  = ()=>USERS[S.me];
+const req = ()=>S.requests.find(r=>r.id===S.openRequestId);
+const hasRole = (u,r)=>USERS[u].roles.includes(r);
+const sleep = ms=>new Promise(r=>setTimeout(r,ms));
+
+/* Deterministic stand-in for the SHA-256 taskConfigHash in the spec. */
+function taskConfigHash(items){
+  const json = JSON.stringify(items.map(t=>({d:t.def,c:t.config})));
+  let h1=0x811c9dc5, h2=0x01000193;
+  for(let i=0;i<json.length;i++){
+    h1=(h1^json.charCodeAt(i))>>>0; h1=(h1*0x01000193)>>>0;
+    h2=(h2+json.charCodeAt(i)*(i+7))>>>0;
+  }
+  return (h1.toString(16)+h2.toString(16)).padStart(12,'0').slice(0,12);
+}
+function stamp(){
+  const d=new Date();
+  const p=n=>String(n).padStart(2,'0');
+  return `${p(d.getDate())}.${p(d.getMonth()+1)}.${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+function toast(msg){
+  const t=$('#toast'); t.textContent=msg; t.classList.add('on');
+  clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove('on'),2100);
+}
+
+/* ============================ rule engine ============================ */
+/* Mirrors evaluateRule() from the specification, reasons included. */
+function evaluateRule(rule,r){
+  const hash = taskConfigHash(r.taskItems);
+  switch(rule.kind){
+    case 'approvals':{
+      const roles = rule.roles||[];
+      const valid = r.approvals.filter(a=>
+        a.decision==='APPROVED' &&
+        a.hash===hash &&
+        (!roles.length || roles.some(ro=>hasRole(a.user,ro))) &&
+        (!rule.excludeRequester || a.user!==r.requester));
+      const dismissed = r.approvals.filter(a=>a.decision==='APPROVED' && a.hash!==hash).length;
+      const label = `${rule.min} approval${rule.min===1?'':'s'}`
+        + (roles.length?` from ${roles.join(' or ')}`:'')
+        + (rule.excludeRequester?' (not the requester)':'');
+      let reason = `${valid.length} of ${rule.min} so far`;
+      if(dismissed) reason += ` — ${dismissed} dismissed because a task was edited after signing off`;
+      return {label, satisfied: valid.length>=rule.min, reason};
+    }
+    case 'noUnresolvedChangeRequests':{
+      const open = r.changeRequests.filter(c=>!c.resolved).length;
+      return {label:'No unresolved change requests', satisfied:open===0,
+              reason: open?`${open} still open`:'all resolved'};
+    }
+    case 'allTasksSucceeded':{
+      const bad = r.taskItems.filter(t=>t.status!=='SUCCEEDED').length;
+      return {label:'Every task has run successfully', satisfied:bad===0,
+              reason: bad?`${bad} not yet successful`:'all succeeded'};
+    }
+    case 'data':{
+      const v = r.data[rule.path];
+      const param = S.definition.dataParameters.find(p=>p.name===rule.path);
+      const ok = rule.op==='truthy' ? !!v : v===rule.value;
+      return {label:`${param?param.label:rule.path} must be set`, satisfied:ok,
+              reason: ok?'confirmed':'not confirmed yet'};
+    }
+    default: return {label:rule.kind, satisfied:false, reason:'unknown rule'};
+  }
+}
+function evaluateGate(r){
+  const rules = S.definition.rules.map(rule=>evaluateRule(rule,r));
+  const noTasks = r.taskItems.length===0;
+  return {
+    rules,
+    hash: taskConfigHash(r.taskItems),
+    noTasks,
+    canExecute: !noTasks && rules.every(x=>x.satisfied) && r.status!=='ARCHIVED' && r.status!=='REJECTED',
+  };
+}
+
+/* ============================ render: shell ============================ */
+function render(){
+  $('#avatars').innerHTML = USER_ORDER.map(id=>{
+    const u=USERS[id];
+    return `<button class="avatar" data-user="${id}" aria-pressed="${S.me===id}"
+      title="${esc(u.name)} — ${esc(u.roles.join(', '))}">${u.initials}</button>`;
+  }).join('');
+  document.querySelectorAll('#topnav button').forEach(b=>{
+    b.setAttribute('aria-current', String(b.dataset.nav===S.screen || (S.screen==='request'&&b.dataset.nav==='inbox')));
+  });
+  $('#screen').innerHTML =
+      S.screen==='inbox'      ? viewInbox()
+    : S.screen==='request'    ? viewRequest()
+    : S.screen==='definition' ? viewDefinition() : '';
+}
+
+function hintStrip(){
+  if(S.hintsDismissed) return '';
+  return `<div class="hints">
+    <div style="flex:1">
+      <h3>Try this</h3>
+      <ol>
+        <li>Switch to <b>A. Schmidt</b> and <b>K. Weber</b> (top right) and approve — watch the gate below the tasks.</li>
+        <li>Resolve K. Weber's change request, tick <b>Change window confirmed</b> on the Data tab, then Execute.</li>
+        <li>One task fails on an occupied port. Fix its target port — and see every approval get dismissed.</li>
+      </ol>
+    </div>
+    <button class="btn ghost sm" data-act="dismiss-hints">Hide</button>
+  </div>`;
+}
+
+/* ============================ render: inbox ============================ */
+function inboxFilter(){
+  const m=S.me;
+  if(S.inboxTab==='awaiting'){
+    return S.requests.filter(r=>{
+      if(r.requester===m) return false;
+      if(r.status!=='OPEN') return false;
+      const hash=taskConfigHash(r.taskItems);
+      return !r.approvals.some(a=>a.user===m && a.hash===hash);
+    });
+  }
+  if(S.inboxTab==='mine')   return S.requests.filter(r=>r.requester===m);
+  if(S.inboxTab==='open')   return S.requests.filter(r=>r.status==='OPEN'||r.status==='APPROVED');
+  return S.requests;
+}
+function viewInbox(){
+  const counts = {
+    awaiting: (()=>{const t=S.inboxTab; S.inboxTab='awaiting'; const n=inboxFilter().length; S.inboxTab=t; return n;})(),
+    mine:     S.requests.filter(r=>r.requester===S.me).length,
+    open:     S.requests.filter(r=>r.status==='OPEN'||r.status==='APPROVED').length,
+  };
+  const list = inboxFilter();
+  return `
+  ${hintStrip()}
+  <div class="page-head">
+    <div>
+      <h1>Task Requests</h1>
+      <p>Changes waiting to be reviewed, approved and carried out.</p>
+    </div>
+    <button class="btn primary" data-act="new-request">${I.plus} New task request</button>
+  </div>
+  <div class="tabs" role="tablist">
+    <button role="tab" aria-selected="${S.inboxTab==='awaiting'}" data-tab="awaiting">Awaiting my approval <span class="count">${counts.awaiting}</span></button>
+    <button role="tab" aria-selected="${S.inboxTab==='mine'}"     data-tab="mine">My requests <span class="count">${counts.mine}</span></button>
+    <button role="tab" aria-selected="${S.inboxTab==='open'}"     data-tab="open">All open <span class="count">${counts.open}</span></button>
+    <button role="tab" aria-selected="${S.inboxTab==='all'}"      data-tab="all">Everything <span class="count">${S.requests.length}</span></button>
+  </div>
+  ${list.length ? `<div class="rows">${list.map(inboxRow).join('')}</div>`
+    : `<div class="empty">Nothing here for ${esc(me().name)} right now. Try another tab, or switch user.</div>`}`;
+}
+function inboxRow(r){
+  const gate = evaluateGate(r);
+  const failed = r.taskItems.filter(t=>t.status==='FAILED').length;
+  const appr = S.definition.rules.find(x=>x.kind==='approvals');
+  const hash = taskConfigHash(r.taskItems);
+  const good = r.approvals.filter(a=>a.decision==='APPROVED'&&a.hash===hash).length;
+  const openCr = r.changeRequests.filter(c=>!c.resolved).length;
+  const bits = [`${r.taskItems.length} task${r.taskItems.length===1?'':'s'}`];
+  if(appr) bits.push(`${good} of ${appr.min} approvals`);
+  if(openCr) bits.push(`${openCr} open change request${openCr===1?'':'s'}`);
+  if(failed) bits.push(`${failed} failed execution${failed===1?'':'s'}`);
+  else if(gate.canExecute) bits.push('ready to execute');
+  return `<div class="row" data-open="${r.id}" tabindex="0" role="button">
+    <div class="rmain">
+      <div class="rtitle">
+        <span class="pill ${STATUS_TONE[r.status]}">${r.status}</span>
+        <span class="id mono">${r.id}</span>
+        <strong>${esc(r.name)}</strong>
+        ${failed?`<span class="pill bad">${I.warn} failed</span>`:''}
+      </div>
+      <div class="rmeta">${bits.map((b,i)=>`${i?'<span class="dot">·</span>':''}<span>${esc(b)}</span>`).join('')}</div>
+    </div>
+    <div class="rside">${esc(S.definition.name)}<br>${esc(USERS[r.requester].name)}</div>
+  </div>`;
+}
+
+/* ============================ render: request ============================ */
+function viewRequest(){
+  const r = req(); if(!r) return viewInbox();
+  const gate = evaluateGate(r);
+  const allowed = STATUS_TRANSITIONS.filter(t=>t.from===r.status && t.roles.some(ro=>hasRole(S.me,ro)));
+  const openCr = r.changeRequests.filter(c=>!c.resolved).length;
+
+  return `
+  ${hintStrip()}
+  <div class="rq-head">
+    <button class="backlink" data-act="back">${I.chevL} All task requests</button>
+    <div class="rq-title">
+      <span class="pill ${STATUS_TONE[r.status]}">${r.status}</span>
+      <h1>${esc(r.name)}</h1>
+      <div class="rq-actions">
+        ${allowed.length
+          ? `<select data-act="transition" aria-label="Change status" style="width:auto">
+               <option value="">Move to…</option>
+               ${allowed.map(t=>`<option value="${t.to}">${t.to}</option>`).join('')}
+             </select>`
+          : `<span class="pill neutral" title="Your roles do not allow a status change from ${r.status}">no moves available</span>`}
+        <button class="btn" data-act="save">Save</button>
+      </div>
+    </div>
+    <div class="rq-sub">
+      <span class="mono">${r.id}</span><span>·</span>
+      <span>${esc(S.definition.name)}</span><span>·</span>
+      <span>opened by ${esc(USERS[r.requester].name)}</span><span>·</span>
+      <span>${esc(r.createdAt)}</span>
+    </div>
+  </div>
+
+  <div class="tabs" role="tablist">
+    <button role="tab" aria-selected="${S.requestTab==='tasks'}" data-rtab="tasks">Tasks <span class="count">${r.taskItems.length}</span></button>
+    <button role="tab" aria-selected="${S.requestTab==='talk'}"  data-rtab="talk">Conversation <span class="count">${r.comments.length+r.changeRequests.length}</span></button>
+    <button role="tab" aria-selected="${S.requestTab==='data'}"  data-rtab="data">Data</button>
+    <button role="tab" aria-selected="${S.requestTab==='hist'}"  data-rtab="hist">History <span class="count">${r.history.length}</span></button>
+  </div>
+
+  <div class="rq-body">
+    <div>
+      ${S.requestTab==='tasks' ? paneTasks(r)
+       :S.requestTab==='talk'  ? paneTalk(r)
+       :S.requestTab==='data'  ? paneData(r)
+       :                         paneHist(r)}
+      ${gateBox(r,gate)}
+    </div>
+    <aside class="rail">
+      ${panelApprovals(r,gate)}
+      ${panelChangeRequests(r,openCr)}
+    </aside>
+  </div>`;
+}
+
+function paneTasks(r){
+  const locked = r.status==='ARCHIVED'||r.status==='REJECTED';
+  return `<div class="tasklist">
+    ${r.taskItems.length? r.taskItems.map(t=>taskCard(r,t,locked)).join('')
+      : `<div class="empty">No tasks yet. A request needs at least one task before it can be executed.</div>`}
+  </div>
+  <div class="addbar">
+    <button class="btn" data-act="add-task" ${locked?'disabled':''}>${I.plus} Add task</button>
+  </div>`;
+}
+function taskCard(r,t,locked){
+  const def = TASK_DEFS[t.def];
+  const tone = {NOT_RUN:'neutral',RUNNING:'blue',SUCCEEDED:'ok',FAILED:'bad'}[t.status];
+  const label= {NOT_RUN:'not run',RUNNING:'running…',SUCCEEDED:'succeeded',FAILED:'failed'}[t.status];
+  const last = r.logs.filter(l=>l.taskId===t.id).slice(-1)[0];
+  return `<article class="task ${t.status==='FAILED'?'failed':''}">
+    <div class="task-top">
+      <div class="task-ico">${def.icon}</div>
+      <div class="task-main">
+        <div class="task-name">
+          <strong>${esc(def.label)}</strong>
+          <span class="pill ${tone}">${t.status==='RUNNING'?I.spin:''}${label}</span>
+          ${t.attempts>1?`<span class="pill neutral">attempt ${t.attempts}</span>`:''}
+        </div>
+        <div class="task-cfg">
+          ${def.params.filter(p=>t.config[p.name]).map(p=>
+            `<span class="kv">${esc(p.label)} <b>${esc(t.config[p.name])}</b></span>`).join('')}
+        </div>
+        ${last && t.status==='SUCCEEDED' ? `<div class="task-note">ran ${esc(last.at)} by ${esc(USERS[last.by].name)}</div>`:''}
+        ${t.status==='FAILED'? `<div class="task-err">${I.warn}<div>
+            <div><b>Execution failed.</b> ${esc(t.error||'')}</div>
+            <div class="mono" style="margin-top:3px;opacity:.85">de.aixpertsoft.taskrequest.actions.CablePatchAction:118</div>
+          </div></div>`:''}
+      </div>
+    </div>
+    <div class="task-acts">
+      <button class="btn sm" data-act="config-task" data-id="${t.id}" ${locked?'disabled':''}>${I.gear} Configure</button>
+      <button class="btn sm" data-act="run-one" data-id="${t.id}">${t.status==='FAILED'?I.rerun+' Re-run':I.play+' Execute this task'}</button>
+      <button class="btn sm ghost" data-act="show-log" data-id="${t.id}">${I.log} Execution log
+        ${r.logs.filter(l=>l.taskId===t.id).length?`<span class="mono" style="opacity:.6">${r.logs.filter(l=>l.taskId===t.id).length}</span>`:''}</button>
+      <button class="btn sm ghost" data-act="del-task" data-id="${t.id}" ${locked?'disabled':''}>${I.trash}</button>
+    </div>
+  </article>`;
+}
+
+function paneData(r){
+  return `<div class="card"><div class="formgrid">
+    ${S.definition.dataParameters.map(p=>{
+      const v = r.data[p.name];
+      if(p.type==='boolean'){
+        return `<div class="field">
+          <label>${esc(p.label)}</label>
+          <label class="switch">
+            <input type="checkbox" data-act="data-bool" data-name="${p.name}" ${v?'checked':''}>
+            <span class="track"></span>
+            <span>${v?'Confirmed':'Not confirmed'}</span>
+          </label>
+          <span class="hint">The execution rules check this before anything can run.</span>
+        </div>`;
+      }
+      return `<div class="field">
+        <label>${esc(p.label)}</label>
+        <input type="text" value="${esc(v??'')}" data-act="data-text" data-name="${p.name}">
+      </div>`;
+    }).join('')}
+  </div></div>`;
+}
+
+function paneTalk(r){
+  const items = [...r.comments.map(c=>({...c,kind:'comment'})),
+                 ...r.changeRequests.map(c=>({...c,kind:'cr'}))]
+                .sort((a,b)=>a.at.localeCompare(b.at));
+  return `<div class="card"><div class="thread">
+    ${items.map(m=>`<div class="msg">
+      <div class="av">${USERS[m.user].initials}</div>
+      <div class="bubble">
+        <div class="bhead">
+          <b>${esc(USERS[m.user].name)}</b>
+          <span>${m.kind==='cr'?'requested a change':'commented'}</span>
+          <span>·</span><span class="mono">${esc(m.at)}</span>
+          ${m.kind==='cr'?`<span class="pill ${m.resolved?'ok':'warn'}" style="margin-left:auto">${m.resolved?'resolved':'open'}</span>`:''}
+        </div>
+        <div class="btext">${esc(m.text)}</div>
+      </div>
+    </div>`).join('')}
+    <div class="composer">
+      <div class="fake-toolbar" aria-hidden="true">
+        <span style="font-weight:700">B</span><span style="font-style:italic">I</span>
+        <span style="text-decoration:underline">U</span><span>•</span><span>1.</span><span>&lt;/&gt;</span>
+      </div>
+      <textarea id="composer" placeholder="Add a comment, or raise a change request…"></textarea>
+      <div class="crow">
+        <button class="btn sm" data-act="post-cr">Request changes</button>
+        <button class="btn sm primary" data-act="post-comment">Comment</button>
+      </div>
+    </div>
+  </div></div>`;
+}
+
+function paneHist(r){
+  return `<div class="card"><div class="hist">
+    ${[...r.history].reverse().map(h=>`<div class="hevent">
+      <span class="hdot"></span>
+      <span class="ht"><b>${esc(USERS[h.who].name)}</b> ${esc(h.text)}</span>
+      <span class="hw">${esc(h.at)}</span>
+    </div>`).join('')}
+  </div></div>`;
+}
+
+function panelApprovals(r,gate){
+  const hash = gate.hash;
+  const rule = S.definition.rules.find(x=>x.kind==='approvals');
+  const good = r.approvals.filter(a=>a.decision==='APPROVED'&&a.hash===hash&&
+    (!rule||!rule.roles.length||rule.roles.some(ro=>hasRole(a.user,ro)))&&
+    (!rule||!rule.excludeRequester||a.user!==r.requester));
+  const mine = r.approvals.find(a=>a.user===S.me);
+  const isRequester = r.requester===S.me;
+  const canApprove = !isRequester && (!rule||!rule.roles.length||rule.roles.some(ro=>hasRole(S.me,ro)))
+                     && r.status==='OPEN';
+
+  const rows = USER_ORDER.filter(u=>u!==r.requester).map(u=>{
+    const a = r.approvals.find(x=>x.user===u);
+    const stale = a && a.hash!==hash;
+    const eligible = !rule||!rule.roles.length||rule.roles.some(ro=>hasRole(u,ro));
+    let note = eligible ? USERS[u].roles.join(', ') : `${USERS[u].roles.join(', ')} — cannot approve this type`;
+    if(a) note = stale ? 'dismissed — a task was edited' : (a.decision==='APPROVED'?`approved ${a.at}`:`rejected ${a.at}`);
+    return `<div class="approver ${a&&!stale&&a.decision==='APPROVED'?'did':''} ${stale?'stale':''}">
+      <span class="av">${a&&!stale?(a.decision==='APPROVED'?I.check:I.cross):USERS[u].initials}</span>
+      <span class="who">${esc(USERS[u].name)}<small>${esc(note)}</small></span>
+    </div>`;
+  }).join('');
+
+  return `<section class="panel">
+    <div class="panel-head">
+      <h3>Approvals</h3>
+      <span class="pill ${rule&&good.length>=rule.min?'ok':'neutral'}">${good.length} of ${rule?rule.min:0}</span>
+    </div>
+    <div class="panel-body">
+      ${rows}
+      <div class="approver" style="opacity:.65">
+        <span class="av">${USERS[r.requester].initials}</span>
+        <span class="who">${esc(USERS[r.requester].name)}<small>requester — cannot approve their own</small></span>
+      </div>
+      ${canApprove
+        ? (mine && mine.hash===hash
+            ? `<button class="btn sm" data-act="unapprove" style="width:100%;justify-content:center">Withdraw my ${mine.decision==='APPROVED'?'approval':'rejection'}</button>`
+            : `<div style="display:flex;gap:6px">
+                 <button class="btn sm go" data-act="approve" style="flex:1;justify-content:center">${I.check} Approve</button>
+                 <button class="btn sm" data-act="reject" style="justify-content:center">Reject</button>
+               </div>`)
+        : `<div class="hint" style="font-size:11.5px;color:var(--ink-3)">
+             ${isRequester?'You opened this request, so you cannot approve it.'
+               : r.status!=='OPEN' ? `Approvals are closed while the request is ${r.status}.`
+               : `${esc(me().name)} does not hold a role that may approve this request type.`}
+           </div>`}
+    </div>
+  </section>`;
+}
+
+function panelChangeRequests(r,openCr){
+  return `<section class="panel">
+    <div class="panel-head">
+      <h3>Change requests</h3>
+      <span class="pill ${openCr?'warn':'ok'}">${openCr} open</span>
+    </div>
+    <div class="panel-body">
+      ${r.changeRequests.length? r.changeRequests.map(c=>`
+        <div class="cr ${c.resolved?'done':''}">
+          <span style="color:${c.resolved?'var(--ok)':'var(--warn)'};flex:none;margin-top:2px">${c.resolved?I.check:I.warn}</span>
+          <div class="body">
+            <span>${esc(c.text)}</span>
+            <small>${esc(USERS[c.user].name)} · ${esc(c.at)}</small>
+          </div>
+          <button class="btn sm ghost" data-act="toggle-cr" data-id="${c.id}"
+            title="${c.resolved?'Reopen':'Mark resolved'}">${c.resolved?'Reopen':'Resolve'}</button>
+        </div>`).join('')
+        : `<div style="font-size:12.5px;color:var(--ink-3)">Nobody has asked for changes.</div>`}
+      <button class="btn sm" data-act="goto-talk" style="width:100%;justify-content:center">${I.plus} Request a change</button>
+    </div>
+  </section>`;
+}
+
+function gateBox(r,gate){
+  const failedNow = r.taskItems.some(t=>t.status==='RUNNING');
+  return `<section class="gate ${gate.canExecute?'open':''}">
+    <div class="gate-head">
+      <h3>${gate.canExecute?'Ready to execute':'Execution blocked'}</h3>
+    </div>
+    <div class="gate-rules">
+      ${gate.noTasks?`<div class="grule fail"><span class="gi">${I.cross}</span>
+        <span class="gt">At least one task<div class="gr">this request has none yet</div></span></div>`:''}
+      ${gate.rules.map(x=>`<div class="grule ${x.satisfied?'pass':'fail'}">
+        <span class="gi">${x.satisfied?I.check:I.cross}</span>
+        <span class="gt">${esc(x.label)}<div class="gr">${esc(x.reason)}</div></span>
+      </div>`).join('')}
+    </div>
+    <div class="gate-foot">
+      <span class="hash">task configuration ${gate.hash}</span>
+      <button class="btn ${gate.canExecute?'go':''}" data-act="run-all"
+        ${gate.canExecute&&!failedNow?'':'disabled'}>
+        ${failedNow?I.spin+' Running…':I.play+' Execute all tasks'}
+      </button>
+    </div>
+  </section>`;
+}
+
+/* ============================ render: definition ============================ */
+function viewDefinition(){
+  const d = S.definition;
+  return `
+  <div class="page-head">
+    <div>
+      <h1>${esc(d.name)}</h1>
+      <p>The template. Everything here is set up by an administrator — no code involved.</p>
+    </div>
+    <button class="btn" data-act="back-inbox">${I.chevL} Back to requests</button>
+  </div>
+  <div class="def-body">
+    <nav class="sidenav">
+      ${[['workflow','Status workflow'],['tasks','Allowed tasks'],['data','Data parameters'],['rules','Execution rules']]
+        .map(([k,l])=>`<button data-def="${k}" aria-current="${S.defSection===k}">${l}</button>`).join('')}
+    </nav>
+    <div class="card">
+      ${S.defSection==='workflow'? defWorkflow()
+       :S.defSection==='tasks'   ? defTasks()
+       :S.defSection==='data'    ? defData()
+       :                           defRules()}
+    </div>
+  </div>`;
+}
+function defWorkflow(){
+  const box=(x,y,w,label,tone)=>{
+    const fill = tone==='ok'?'var(--ok-soft)':tone==='bad'?'var(--bad-soft)':tone==='blue'?'var(--accent-soft)':'var(--surface-2)';
+    const line = tone==='ok'?'var(--ok-line)':tone==='bad'?'var(--bad-line)':tone==='blue'?'var(--accent-line)':'var(--border-strong)';
+    const ink  = tone==='ok'?'var(--ok)':tone==='bad'?'var(--bad)':tone==='blue'?'var(--accent)':'var(--ink-2)';
+    return `<g><rect x="${x}" y="${y}" width="${w}" height="34" rx="6" fill="${fill}" stroke="${line}"/>
+      <text x="${x+w/2}" y="${y+22}" text-anchor="middle" fill="${ink}"
+        style="font:600 11.5px var(--sans);letter-spacing:.05em">${label}</text></g>`;
+  };
+  const arrow=(x1,y1,x2,y2,dash)=>`<path d="M${x1} ${y1} L${x2} ${y2}" stroke="var(--border-strong)"
+      stroke-width="1.4" marker-end="url(#ah)" ${dash?'stroke-dasharray="4 3"':''} fill="none"/>`;
+  return `<div class="graph">
+    <svg width="720" height="200" role="img" aria-label="Status workflow graph">
+      <defs><marker id="ah" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+        <path d="M0 0 L8 4 L0 8 z" fill="var(--border-strong)"/></marker></defs>
+      ${box(10,26,96,'OPEN','blue')}
+      ${box(186,26,110,'APPROVED','ok')}
+      ${box(376,26,116,'COMPLETED','')}
+      ${box(572,26,110,'ARCHIVED','')}
+      ${box(186,124,110,'REJECTED','bad')}
+      ${arrow(108,43,184,43)}
+      ${arrow(298,43,374,43)}
+      ${arrow(494,43,570,43)}
+      ${arrow(240,60,240,122,true)}
+      ${arrow(186,60,110,60,true)}
+      <text x="150" y="34" text-anchor="middle" fill="var(--ink-3)" style="font:400 10px var(--mono)">Administrator</text>
+      <text x="336" y="34" text-anchor="middle" fill="var(--ink-3)" style="font:400 10px var(--mono)">NetOps</text>
+      <text x="532" y="34" text-anchor="middle" fill="var(--ink-3)" style="font:400 10px var(--mono)">Administrator</text>
+      <text x="250" y="96" fill="var(--ink-3)" style="font:400 10px var(--mono)">reject</text>
+      <text x="118" y="74" fill="var(--ink-3)" style="font:400 10px var(--mono)">send back</text>
+    </svg>
+    <p style="margin:12px 0 0;color:var(--ink-3);font-size:12.5px;max-width:60ch">
+      Each arrow carries the roles allowed to make that move, so who may advance a request is a setting,
+      not a code change. This is the transition editor AixBOMS already uses for ticket status.
+    </p>
+  </div>`;
+}
+function defTasks(){
+  return `<div style="padding:15px">
+    <p style="margin:0 0 12px;color:var(--ink-3);font-size:13px">
+      Which kinds of work may be put into a request of this type. The list comes from the server —
+      any task the server knows how to run shows up here automatically.</p>
+    <div class="tiles">
+      ${Object.values(TASK_DEFS).map(d=>`<div class="tile" style="cursor:default">
+        <span class="ti">${d.icon}</span><b>${esc(d.label)}</b><small>${esc(d.desc)}</small>
+      </div>`).join('')}
+    </div>
+  </div>`;
+}
+function defData(){
+  return `<div style="padding:15px">
+    <p style="margin:0 0 12px;color:var(--ink-3);font-size:13px">
+      Fields copied into every new request of this type. The values are then edited per request,
+      and the execution rules can check them.</p>
+    <div class="rows" style="box-shadow:none">
+      ${S.definition.dataParameters.map(p=>`<div class="row" style="cursor:default">
+        <div class="rmain"><div class="rtitle"><strong>${esc(p.label)}</strong>
+          <span class="pill neutral">${p.type}</span></div>
+          <div class="rmeta"><span class="mono">${esc(p.name)}</span><span class="dot">·</span>
+          <span>default ${esc(String(p.defaultValue))}</span></div></div>
+      </div>`).join('')}
+    </div>
+  </div>`;
+}
+function defRules(){
+  const r = req() || S.requests[0];
+  const gate = evaluateGate(r);
+  const KINDS = {
+    approvals:'Approvals', noUnresolvedChangeRequests:'No open change requests',
+    allTasksSucceeded:'All tasks succeeded', data:'Data value',
+  };
+  return `<div style="padding:15px">
+    <p style="margin:0 0 12px;color:var(--ink-3);font-size:13px">
+      Every rule must pass before the Execute button unlocks. Change one and the gate on
+      <span class="mono">${esc(r.id)}</span> updates immediately.</p>
+    ${S.definition.rules.map((rule,i)=>`
+      <div class="rulecard">
+        <div class="rulecard-top">
+          <span class="rulecard-num">${i+1}</span>
+          <strong style="flex:1">${KINDS[rule.kind]}</strong>
+          <span class="pill ${gate.rules[i].satisfied?'ok':'bad'}">${gate.rules[i].satisfied?'passing':'blocking'}</span>
+        </div>
+        <div class="rulecard-body">
+          ${rule.kind==='approvals'? `
+            <span>at least</span>
+            <input type="number" min="1" max="3" value="${rule.min}" data-act="rule-min" data-i="${i}">
+            <span>approval(s) from</span>
+            <span class="chip">${esc(rule.roles.join(', ')||'anyone')}</span>
+            <label class="switch" style="gap:7px">
+              <input type="checkbox" data-act="rule-excl" data-i="${i}" ${rule.excludeRequester?'checked':''}>
+              <span class="track"></span><span>exclude the requester</span>
+            </label>`
+          : rule.kind==='data' ? `
+            <span class="chip">${esc(rule.path)}</span><span>must be true</span>`
+          : `<span style="color:var(--ink-3)">No options.</span>`}
+        </div>
+      </div>`).join('')}
+    <div style="margin-top:13px;padding:11px 13px;background:var(--surface-2);border:1px solid var(--border);
+      border-radius:var(--r);font-size:12.5px;color:var(--ink-2)">
+      <b>On failure:</b> ${S.definition.onError==='STOP'
+        ? 'stop — remaining tasks are left untouched.' : 'carry on with the remaining tasks.'}
+      <button class="btn sm ghost" data-act="toggle-onerror" style="margin-left:8px">Change</button>
+    </div>
+  </div>`;
+}
+
+/* ============================ dialogs ============================ */
+function closeModal(){ $('#modal').innerHTML=''; }
+function openModal(html){
+  $('#modal').innerHTML = `<div class="scrim" data-scrim="1">${html}</div>`;
+  const f = $('#modal input, #modal select, #modal button');
+  if(f) f.focus();
+}
+function dlgAddTask(){
+  openModal(`<div class="dialog" role="dialog" aria-modal="true" aria-label="Add task">
+    <div class="dhead"><h2>Add a task</h2>
+      <button class="iconbtn" data-act="close">${I.cross}</button></div>
+    <div class="dbody">
+      <p style="margin:0;color:var(--ink-3);font-size:13px">
+        Pick the kind of work to add. This list is what the server can actually carry out.</p>
+      <div class="tiles">
+        ${Object.values(TASK_DEFS).map(d=>`<button class="tile" data-act="pick-task" data-def="${d.name}">
+          <span class="ti">${d.icon}</span><b>${esc(d.label)}</b><small>${esc(d.desc)}</small>
+        </button>`).join('')}
+      </div>
+    </div>
+  </div>`);
+}
+function dlgConfigTask(defName, taskId){
+  const def = TASK_DEFS[defName];
+  const r = req();
+  const t = taskId ? r.taskItems.find(x=>x.id===taskId) : null;
+  const cfg = t ? {...t.config} : {};
+  openModal(`<div class="dialog" role="dialog" aria-modal="true" aria-label="Configure task">
+    <div class="dhead">
+      <span style="color:var(--accent)">${def.icon}</span>
+      <h2>${t?'Configure':'Add'} — ${esc(def.label)}</h2>
+      <button class="iconbtn" data-act="close">${I.cross}</button>
+    </div>
+    <div class="dbody">
+      ${def.params.map(p=>{
+        const v = cfg[p.name]??'';
+        if(p.type==='enum') return `<div class="field">
+          <label>${esc(p.label)} ${p.required?'<span class="req">*</span>':''}</label>
+          <select data-p="${p.name}">${p.values.map(o=>
+            `<option ${o===v?'selected':''}>${esc(o)}</option>`).join('')}</select></div>`;
+        return `<div class="field">
+          <label>${esc(p.label)} ${p.required?'<span class="req">*</span>':''}</label>
+          <input type="text" data-p="${p.name}" value="${esc(v)}" placeholder="${esc(p.placeholder||'')}"></div>`;
+      }).join('')}
+      <div style="font-size:12px;color:var(--ink-3);border-top:1px solid var(--border);padding-top:11px">
+        This form is generated from what the server declares about the task — adding a new kind of task
+        needs no new screen.
+        ${t&&r.approvals.length?`<div style="margin-top:7px;color:var(--warn)">
+          ${I.warn} Changing anything here dismisses the ${r.approvals.length} approval(s) already given.</div>`:''}
+      </div>
+    </div>
+    <div class="dfoot">
+      <button class="btn" data-act="close">Cancel</button>
+      <button class="btn primary" data-act="save-task" data-def="${defName}" data-id="${taskId||''}">
+        ${t?'Save changes':'Add task'}</button>
+    </div>
+  </div>`);
+}
+function dlgLog(taskId){
+  const r = req();
+  const t = r.taskItems.find(x=>x.id===taskId);
+  const def = TASK_DEFS[t.def];
+  const logs = r.logs.filter(l=>l.taskId===taskId).slice().reverse();
+  openModal(`<div class="dialog wide" role="dialog" aria-modal="true" aria-label="Execution log">
+    <div class="dhead"><h2>Execution log — ${esc(def.label)}</h2>
+      <button class="iconbtn" data-act="close">${I.cross}</button></div>
+    <div class="dbody">
+      ${logs.length? logs.map(l=>`<div class="logrow">
+        <div class="loghead">
+          <span class="pill ${l.outcome==='SUCCEEDED'?'ok':'bad'}">${l.outcome==='SUCCEEDED'?'succeeded':'failed'}</span>
+          <span>Attempt ${l.attempt}</span>
+          <span class="mono">${esc(l.at)}</span>
+          <span class="mono">${esc(USERS[l.by].name)}</span>
+          <span class="mono" style="margin-left:auto">${l.ms} ms</span>
+        </div>
+        <div class="logbody">${esc(l.detail)}</div>
+      </div>`).join('')
+      : `<div class="empty">This task has not been run yet. Every attempt — successful or not — is
+         recorded here, and that record is the audit trail.</div>`}
+    </div>
+    <div class="dfoot"><button class="btn" data-act="close">Close</button></div>
+  </div>`);
+}
+function dlgNewRequest(){
+  openModal(`<div class="dialog" role="dialog" aria-modal="true" aria-label="New task request">
+    <div class="dhead"><h2>New task request</h2>
+      <button class="iconbtn" data-act="close">${I.cross}</button></div>
+    <div class="dbody">
+      <div class="field"><label>Request type</label>
+        <select id="nr-type"><option>${esc(S.definition.name)}</option></select>
+        <span class="hint">Decides the approval rules, the statuses, and which tasks may be added.</span>
+      </div>
+      <div class="field"><label>Title <span class="req">*</span></label>
+        <input type="text" id="nr-name" placeholder="e.g. Patch rack R14 uplinks"></div>
+    </div>
+    <div class="dfoot">
+      <button class="btn" data-act="close">Cancel</button>
+      <button class="btn primary" data-act="create-request">Create</button>
+    </div>
+  </div>`);
+}
+
+/* ============================ mutations ============================ */
+function note(r,text){ r.history.push({at:stamp(),who:S.me,text}); }
+
+function approve(decision){
+  const r=req(); const hash=taskConfigHash(r.taskItems);
+  r.approvals = r.approvals.filter(a=>a.user!==S.me);
+  r.approvals.push({id:'a'+(++S.seq), user:S.me, decision, at:stamp(), hash});
+  note(r, decision==='APPROVED'?'approved this request':'rejected this request');
+  r.version++;
+  render(); toast(decision==='APPROVED'?'Approved':'Rejected');
+}
+function unapprove(){
+  const r=req();
+  r.approvals = r.approvals.filter(a=>a.user!==S.me);
+  note(r,'withdrew their review'); r.version++;
+  render(); toast('Withdrawn');
+}
+async function runTasks(ids){
+  const r=req();
+  const gate=evaluateGate(r);
+  if(!gate.canExecute){ toast('The server refused: rules are not satisfied'); return; }
+  for(const id of ids){
+    const t=r.taskItems.find(x=>x.id===id); if(!t) continue;
+    t.status='RUNNING'; render();
+    await sleep(520);
+    const fails = t.def==='cablePatch'
+      && t.config.operation==='Connect'
+      && OCCUPIED_PORTS.includes((t.config.targetPort||'').trim());
+    t.attempts++;
+    if(fails){
+      t.status='FAILED';
+      t.error=`Port ${t.config.targetPort} is already carrying cable CBL-88213.`;
+      r.logs.push({taskId:t.id, attempt:t.attempts, at:stamp(), by:S.me, outcome:'FAILED', ms:1380,
+        detail:`BusinessLogicError: Port ${t.config.targetPort} is already carrying cable CBL-88213.\n`
+             + `  at de.aixpertsoft.taskrequest.actions.CablePatchAction.perform(CablePatchAction.java:118)\n`
+             + `  at de.aixpertsoft.action.ActionExecutor.run(ActionExecutor.java:64)`});
+      note(r,`ran ${TASK_DEFS[t.def].label} — failed`);
+      render();
+      if(S.definition.onError==='STOP' && ids.length>1){
+        toast('Stopped after a failure — remaining tasks left untouched');
+        return;
+      }
+    }else{
+      t.status='SUCCEEDED'; t.error=null;
+      const d = TASK_DEFS[t.def];
+      r.logs.push({taskId:t.id, attempt:t.attempts, at:stamp(), by:S.me, outcome:'SUCCEEDED', ms:410,
+        detail:`${d.label} completed — ${d.summary(t.config)}`});
+      note(r,`ran ${d.label} — succeeded`);
+      render();
+    }
+  }
+  const allOk = r.taskItems.every(t=>t.status==='SUCCEEDED');
+  toast(allOk?'All tasks completed':'Finished with failures');
+}
+
+/* ============================ events ============================ */
+document.addEventListener('click', e=>{
+  const scrim = e.target.closest('[data-scrim]');
+  if(scrim && e.target===scrim){ closeModal(); return; }
+
+  const av = e.target.closest('[data-user]');
+  if(av){ S.me=av.dataset.user; render(); toast(`Now viewing as ${USERS[S.me].name}`); return; }
+
+  const nav = e.target.closest('[data-nav]');
+  if(nav){ S.screen = nav.dataset.nav==='inbox'?'inbox':'definition'; render(); return; }
+
+  const openRow = e.target.closest('[data-open]');
+  if(openRow){ S.openRequestId=openRow.dataset.open; S.screen='request'; S.requestTab='tasks'; render(); return; }
+
+  const tab = e.target.closest('[data-tab]');
+  if(tab){ S.inboxTab=tab.dataset.tab; render(); return; }
+  const rtab = e.target.closest('[data-rtab]');
+  if(rtab){ S.requestTab=rtab.dataset.rtab; render(); return; }
+  const dsec = e.target.closest('[data-def]');
+  if(dsec && dsec.dataset.act===undefined && dsec.hasAttribute('data-def') && dsec.tagName==='BUTTON' && !dsec.dataset.act){
+    if(dsec.closest('.sidenav')){ S.defSection=dsec.dataset.def; render(); return; }
+  }
+
+  const btn = e.target.closest('[data-act]'); if(!btn) return;
+  const act = btn.dataset.act;
+  const r = req();
+
+  switch(act){
+    case 'dismiss-hints': S.hintsDismissed=true; render(); break;
+    case 'back': case 'back-inbox': S.screen='inbox'; render(); break;
+    case 'close': closeModal(); break;
+    case 'goto-talk': S.requestTab='talk'; render(); break;
+    case 'save': r.version++; render(); toast(`Saved — version ${r.version}`); break;
+
+    case 'approve':   approve('APPROVED'); break;
+    case 'reject':    approve('REJECTED'); break;
+    case 'unapprove': unapprove(); break;
+
+    case 'toggle-cr':{
+      const c=r.changeRequests.find(x=>x.id===btn.dataset.id);
+      c.resolved=!c.resolved;
+      note(r, c.resolved?'resolved a change request':'reopened a change request');
+      render(); toast(c.resolved?'Marked resolved':'Reopened'); break;
+    }
+    case 'post-comment': case 'post-cr':{
+      const ta=$('#composer'); const text=(ta?.value||'').trim();
+      if(!text){ toast('Write something first'); ta?.focus(); break; }
+      if(act==='post-comment'){
+        r.comments.push({id:'c'+(++S.seq), user:S.me, text, at:stamp()});
+        note(r,'commented');
+      }else{
+        r.changeRequests.push({id:'cr'+(++S.seq), user:S.me, text, resolved:false, at:stamp()});
+        note(r,'requested a change');
+      }
+      render(); toast(act==='post-cr'?'Change requested':'Comment added'); break;
+    }
+
+    case 'add-task':    dlgAddTask(); break;
+    case 'pick-task':   dlgConfigTask(btn.dataset.def, null); break;
+    case 'config-task':{
+      const t=r.taskItems.find(x=>x.id===btn.dataset.id);
+      dlgConfigTask(t.def, t.id); break;
+    }
+    case 'save-task':{
+      const defName=btn.dataset.def, id=btn.dataset.id;
+      const def=TASK_DEFS[defName]; const cfg={};
+      let missing=null;
+      document.querySelectorAll('#modal [data-p]').forEach(el=>{
+        cfg[el.dataset.p]=el.value.trim();
+      });
+      def.params.forEach(p=>{ if(p.required && !cfg[p.name]) missing=missing||p.label; });
+      if(missing){ toast(`${missing} is required`); break; }
+      if(id){
+        const t=r.taskItems.find(x=>x.id===id);
+        const before=taskConfigHash(r.taskItems);
+        t.config=cfg;
+        const after=taskConfigHash(r.taskItems);
+        if(before!==after){
+          if(t.status!=='NOT_RUN'){ t.status='NOT_RUN'; t.error=null; }
+          const dismissed=r.approvals.filter(a=>a.hash===before).length;
+          note(r,`changed the ${def.label} task configuration`);
+          if(dismissed) toast(`${dismissed} approval(s) dismissed — the task changed`);
+          else toast('Task updated');
+        }
+      }else{
+        r.taskItems.push({id:'ti'+(++S.seq), def:defName, status:'NOT_RUN', attempts:0, config:cfg});
+        note(r,`added a ${def.label} task`);
+        toast('Task added');
+      }
+      r.version++;
+      closeModal(); render(); break;
+    }
+    case 'del-task':{
+      r.taskItems=r.taskItems.filter(t=>t.id!==btn.dataset.id);
+      r.logs=r.logs.filter(l=>l.taskId!==btn.dataset.id);
+      note(r,'removed a task'); r.version++;
+      render(); toast('Task removed'); break;
+    }
+    case 'show-log': dlgLog(btn.dataset.id); break;
+
+    case 'run-all': runTasks(r.taskItems.filter(t=>t.status!=='SUCCEEDED').map(t=>t.id)); break;
+    case 'run-one': runTasks([btn.dataset.id]); break;
+
+    case 'new-request': dlgNewRequest(); break;
+    case 'create-request':{
+      const name=($('#nr-name')?.value||'').trim();
+      if(!name){ toast('Give the request a title'); break; }
+      const id='TR-'+(1043+S.seq);
+      const data={}; S.definition.dataParameters.forEach(p=>data[p.name]=p.defaultValue);
+      S.requests.unshift({
+        id, name, requester:S.me, status:'OPEN', createdAt:stamp(), version:1,
+        data, taskItems:[], approvals:[], changeRequests:[], comments:[], logs:[],
+        history:[{at:stamp(), who:S.me, text:`created this request from ${S.definition.name}`}],
+      });
+      S.seq++; S.openRequestId=id; S.screen='request'; S.requestTab='tasks';
+      closeModal(); render(); toast('Request created — add a task next'); break;
+    }
+
+    case 'toggle-onerror':
+      S.definition.onError = S.definition.onError==='STOP'?'CONTINUE':'STOP';
+      render(); break;
+  }
+});
+
+document.addEventListener('change', e=>{
+  const el=e.target; const act=el.dataset.act; if(!act) return;
+  const r=req();
+  if(act==='data-bool'){ r.data[el.dataset.name]=el.checked; r.version++; render(); return; }
+  if(act==='transition'){
+    const to=el.value; if(!to) return;
+    r.status=to; note(r,`moved this request to ${to}`); r.version++;
+    render(); toast(`Moved to ${to}`); return;
+  }
+  if(act==='rule-min'){
+    const v=Math.max(1,Math.min(3,parseInt(el.value||'1',10)));
+    S.definition.rules[+el.dataset.i].min=v; render(); return;
+  }
+  if(act==='rule-excl'){
+    S.definition.rules[+el.dataset.i].excludeRequester=el.checked; render(); return;
+  }
+});
+document.addEventListener('input', e=>{
+  const el=e.target;
+  if(el.dataset.act==='data-text'){ req().data[el.dataset.name]=el.value; }
+});
+document.addEventListener('keydown', e=>{
+  if(e.key==='Escape') closeModal();
+  const row=e.target.closest?.('[data-open]');
+  if(row && (e.key==='Enter'||e.key===' ')){ e.preventDefault(); row.click(); }
+});
+
+$('#themebtn').addEventListener('click',()=>{
+  const cur=document.documentElement.getAttribute('data-theme');
+  const dark = cur ? cur==='dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+  document.documentElement.setAttribute('data-theme', dark?'light':'dark');
+});
+$('#resetbtn').addEventListener('click',()=>{ S=seed(); render(); toast('Prototype reset'); });
+
+/* ---- seed the two pre-existing approvals against the current hash ---- */
+S = seed();
+(function fixSeedHashes(){
+  S.requests.forEach(r=>{
+    const h=taskConfigHash(r.taskItems);
+    r.approvals.forEach(a=>{ if(a.hash===null) a.hash=h; });
+  });
+})();
+render();
+</script>
