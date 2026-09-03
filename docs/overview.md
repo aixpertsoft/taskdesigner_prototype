@@ -52,7 +52,8 @@ new dialog, no change to the request editor.
 **A `WorkItem`** is a step only a person can carry out — a document that must be signed before the
 next task files it. It is a task type like any other, so the requester puts it in the plan and
 reviewers approve it along with everything else. Execution parks there and resumes the moment the
-person closes it.
+person closes it. Whether it may be *declined* — and whether declining sends the request back, fails
+it, or is refused outright — is configured per step and approved along with the rest of the plan.
 
 ---
 

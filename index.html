@@ -63,21 +63,34 @@ button,input,select,textarea{font:inherit;color:inherit}
   background:var(--surface);border-bottom:1px solid var(--border);
   position:sticky;top:0;z-index:40;
 }
-.brand{display:flex;align-items:center;gap:9px;font-weight:600;letter-spacing:-.01em}
+.brand{display:flex;align-items:center;gap:9px;font-weight:600;letter-spacing:-.01em;flex:none}
 .brand .mark{
   width:24px;height:24px;border-radius:5px;background:var(--accent);color:var(--accent-ink);
   display:grid;place-items:center;flex:none;
 }
 .brand .sub{color:var(--ink-3);font-weight:400;font-size:12px;
   padding-left:10px;margin-left:2px;border-left:1px solid var(--border)}
-.topnav{display:flex;gap:2px;margin-left:8px}
+/* The bar is one non-wrapping row, so the nav must never be the thing that
+   shrinks — a clipped nav item reads as a missing feature. */
+.topnav{display:flex;gap:2px;margin-left:8px;flex:none}
 .topnav button{
   background:none;border:0;padding:7px 11px;border-radius:var(--r);color:var(--ink-2);
-  cursor:pointer;font-weight:500;
+  cursor:pointer;font-weight:500;white-space:nowrap;flex:none;
 }
 .topnav button:hover{background:var(--surface-2);color:var(--ink)}
 .topnav button[aria-current="true"]{background:var(--accent-soft);color:var(--accent)}
-.spacer{flex:1}
+.spacer{flex:1;min-width:0}
+/* In a narrow window (a VS Code preview pane, say) drop the decoration before
+   the navigation: the wordmark suffix first, then the "Viewing as" label. */
+@media (max-width:900px){
+  .topbar{gap:10px;padding:0 10px}
+  .brand .sub{display:none}
+}
+@media (max-width:760px){
+  .userswitch>span{display:none}
+  .brand{font-size:0}
+  .brand .mark{font-size:13px}
+}
 
 .userswitch{display:flex;align-items:center;gap:8px}
 .userswitch>span{font-size:12px;color:var(--ink-3);white-space:nowrap}
@@ -415,6 +428,7 @@ input[type=text]:focus,select:focus,textarea:focus{border-color:var(--accent);ou
     <nav class="topnav" id="topnav">
       <button data-nav="inbox">Requests</button>
       <button data-nav="definition">Request types</button>
+      <button data-nav="taskdefs">Task types</button>
     </nav>
     <div class="spacer"></div>
     <div class="userswitch">
@@ -486,71 +500,6 @@ const USERS = {
 };
 const USER_ORDER = ['mb','as','kw','jn'];
 
-const TASK_DEFS = {
-  cablePatch:{
-    name:'cablePatch', label:'Cable Patch', icon:I.cable,
-    desc:'Connect or disconnect a cable between two ports.',
-    params:[
-      {name:'operation', label:'Operation', type:'enum', values:['Connect','Disconnect'], required:true},
-      {name:'sourcePort',label:'Source port',type:'text',required:true,placeholder:'RCK-R12-SW01 / Gi1/0/24'},
-      {name:'targetPort',label:'Target port',type:'text',required:true,placeholder:'PP-3 / Port 24'},
-      {name:'cableType', label:'Cable type', type:'enum', values:['Cat6a','OM4 LC-LC','OS2 LC-LC']},
-    ],
-    summary:c=>`${c.operation||'Connect'} · ${c.sourcePort||'—'} → ${c.targetPort||'—'}`,
-  },
-  portReserve:{
-    name:'portReserve', label:'Port Reservation', icon:I.port,
-    desc:'Reserve a switch port so nobody else can claim it.',
-    params:[
-      {name:'device',label:'Device',type:'text',required:true,placeholder:'RCK-R12-SW01'},
-      {name:'port',  label:'Port',  type:'text',required:true,placeholder:'Gi1/0/25'},
-      {name:'until', label:'Reserved until',type:'text',placeholder:'2026-09-30'},
-    ],
-    summary:c=>`${c.device||'—'} / ${c.port||'—'}`,
-  },
-  helloWorld:{
-    name:'helloWorld', label:'Hello World', icon:I.hello,
-    desc:'Prints a greeting on the server. Used to prove the plumbing.',
-    params:[{name:'greeting',label:'Greeting',type:'text',required:true,placeholder:'Guten Morgen'}],
-    summary:c=>`"${c.greeting||''}"`,
-  },
-  genDoc:{
-    name:'genDoc', label:'Generate document', icon:I.doc,
-    desc:'Produces the change documentation and hands the file to the next task.',
-    params:[
-      {name:'template',label:'Template',type:'enum',values:['Change record','Decommission report'],required:true},
-    ],
-    /* What the server declares as @Action outParameters — the next task can read these. */
-    outputs:(c,r)=>{
-      const file = `${(c.template||'document').toLowerCase().replace(/\s+/g,'-')}-${r.id}.pdf`;
-      return {fileName:file, documentId:'DOC-'+r.id.replace(/\D/g,''), sha256:fnv(file)};
-    },
-    summary:c=>`${c.template||'—'}`,
-  },
-  signOff:{
-    name:'signOff', label:'Digital signature', icon:I.pen, manual:true,
-    desc:'A named person must sign before execution continues. No server executor — a human closes it.',
-    params:[
-      {name:'document',  label:'What is signed',type:'text',required:true,placeholder:'Decommission report for SW-07'},
-      {name:'signerRole',label:'Who may sign',  type:'enum',values:['Administrator','NetOps'],required:true},
-      {name:'dueBy',     label:'Due by',        type:'text',placeholder:'2026-09-05'},
-    ],
-    /* The completion form, generated the same way the config form is. */
-    resultParams:[
-      {name:'signatureRef',label:'Signature reference',type:'text',required:true,placeholder:'SIG-2026-0912'},
-      {name:'note',        label:'Note',               type:'text',placeholder:'Also the reason, if you refuse'},
-    ],
-    summary:c=>`${c.document||'—'} · ${c.signerRole||'—'}`,
-  },
-  archiveDoc:{
-    name:'archiveDoc', label:'Archive document', icon:I.box,
-    desc:'Files the signed document in the document store.',
-    params:[{name:'store',label:'Archive',type:'text',required:true,placeholder:'DMS / Change records'}],
-    outputs:(c)=>({archivedIn:c.store||'—'}),
-    summary:c=>`→ ${c.store||'—'}`,
-  },
-};
-
 /* Ports already carrying a cable — a Connect onto one of these fails, like the real thing would. */
 const OCCUPIED_PORTS = ['PP-3 / Port 24'];
 
@@ -587,6 +536,12 @@ function seed(){
         {name:'goodToGo', label:'Change window confirmed', type:'boolean', defaultValue:false},
         {name:'plannedDate', label:'Planned date', type:'text', defaultValue:'2026-09-03'},
         {name:'changeTicket', label:'Change ticket', type:'text', defaultValue:'CHG-4471'},
+        /* Written by execution, never by the author — a task's output mapping targets these.
+           If a requester could type into them, they could forge the id of something the
+           server made. See isExecutionWritten() in task-editor.js. */
+        {name:'documentId', label:'Document id', type:'text', defaultValue:''},
+        {name:'documentFile', label:'Document file', type:'text', defaultValue:''},
+        {name:'archiveRef', label:'Archive reference', type:'text', defaultValue:''},
       ],
     },
     requests:[
@@ -625,7 +580,8 @@ function seed(){
           {id:'ti6', def:'genDoc', status:'NOT_RUN', attempts:0, config:{
             template:'Decommission report'}},
           {id:'ti7', def:'signOff', status:'NOT_RUN', attempts:0, config:{
-            document:'Decommission report for SW-07', signerRole:'Administrator', dueBy:'2026-09-05'}},
+            document:'Decommission report for SW-07', signerRole:'Administrator', dueBy:'2026-09-05',
+            onRefusal:'Send back'}},
           {id:'ti8', def:'archiveDoc', status:'NOT_RUN', attempts:0, config:{
             store:'DMS / Change records 2026'}},
         ],
@@ -764,7 +720,9 @@ function render(){
   $('#screen').innerHTML =
       S.screen==='inbox'      ? viewInbox()
     : S.screen==='request'    ? viewRequest()
-    : S.screen==='definition' ? viewDefinition() : '';
+    : S.screen==='definition' ? viewDefinition()
+    : S.screen==='taskdefs'   ? viewTaskDefs()   /* task-editor.js */
+    : '';
 }
 
 function tipPanel(){
@@ -957,7 +915,10 @@ function taskCard(r,t,locked){
             <div style="flex:1">
               <div><b>Execution is parked here.</b> Waiting for ${esc(w.roles.join(' or '))} —
                 ${eligibleFor(w).map(u=>esc(USERS[u].name)).join(', ')}${w.dueAt?` · due ${esc(w.dueAt)}`:''}</div>
-              <div style="margin-top:2px;opacity:.85">Work item <span class="mono">${esc(w.id)}</span> · the run resumes the moment it closes.</div>
+              <div style="margin-top:2px;opacity:.85">Work item <span class="mono">${esc(w.id)}</span> · the run resumes the moment it closes ·
+                ${refusalMode(t)==='Not allowed'?'cannot be refused'
+                 :refusalMode(t)==='Fail the task'?'a refusal fails the task'
+                 :'a refusal sends the request back'}.</div>
             </div>
             ${canSign?`<button class="btn sm go" data-act="sign" data-id="${w.id}">${I.pen} Sign</button>`
                      :`<span class="pill neutral">not yours to sign</span>`}
@@ -998,9 +959,15 @@ function paneData(r){
           <span class="hint">The execution rules check this before anything can run.</span>
         </div>`;
       }
+      /* A field that some task's output mapping targets is server-owned. Showing it
+         read-only is the visible half of the rule; the server refusing the write is
+         the half that matters. */
+      const written = typeof isExecutionWritten==='function' && isExecutionWritten(p.name);
       return `<div class="field">
-        <label>${esc(p.label)}</label>
-        <input type="text" value="${esc(v??'')}" data-act="data-text" data-name="${p.name}">
+        <label>${esc(p.label)}${written?' <span class="pill neutral">set by execution</span>':''}</label>
+        <input type="text" value="${esc(v??'')}" data-act="data-text" data-name="${p.name}"
+          ${written?'disabled':''}>
+        ${written?`<span class="hint">Written by a task's output mapping — not editable here.</span>`:''}
       </div>`;
     }).join('')}
   </div></div>`;
@@ -1125,8 +1092,9 @@ function gateBox(r,gate){
     : `<span class="gi">${I.warn}</span><span>${todo} thing${todo===1?'':'s'} still ${todo===1?'needs':'need'} doing <span class="gsub">— before this request may run</span></span>`;
 
   const action = waiting
-    ? `<button class="btn ghost" data-act="cancel-run"
-         title="Abandon the run and unlock the request for editing">Cancel run</button>`
+    ? `<button class="btn ghost" data-act="cancel-run" ${mayCancel(r)?'':'disabled'}
+         title="${mayCancel(r)?'Abandon the run and unlock the request for editing'
+                             :'Only the requester or an administrator may cancel a run'}">Cancel run</button>`
     : `<button class="btn ${gate.canExecute&&!allDone?'go':''}" data-act="run-all"
          ${gate.canExecute&&!running&&!allDone&&!runInFlight(r)?'':'disabled'}
          title="${gate.canExecute?'Run every task that has not succeeded yet':'Blocked until every check passes'}">
@@ -1221,13 +1189,17 @@ function defWorkflow(){
 function defTasks(){
   return `<div style="padding:15px">
     <p style="margin:0 0 12px;color:var(--ink-3);font-size:13px">
-      Which kinds of work may be put into a request of this type. The list comes from the server —
-      any task the server knows how to run shows up here automatically.</p>
+      Which kinds of work may be put into a request of this type. The catalogue is authored in
+      <b>Task types</b> and stored as <span class="mono">task-definitions.json</span> — each entry
+      wraps a server action the platform can already run, or is closed by a person.</p>
     <div class="tiles">
       ${Object.values(TASK_DEFS).map(d=>`<div class="tile" style="cursor:default">
-        <span class="ti">${d.icon}</span><b>${esc(d.label)}</b><small>${esc(d.desc)}</small>
+        <span class="ti">${d.icon}</span><b>${esc(d.label)}</b>
+        <small>${esc(d.desc)}</small>
+        <small class="mono" style="opacity:.75">${esc(d.manual?'manual':d.action||'')}</small>
       </div>`).join('')}
     </div>
+    <button class="btn sm" data-nav="taskdefs" style="margin-top:12px">${I.gear} Edit task types</button>
   </div>`;
 }
 function defData(){
@@ -1356,7 +1328,8 @@ function dlgLog(taskId){
     <div class="dbody">
       ${logs.length? logs.map(l=>`<div class="logrow">
         <div class="loghead">
-          <span class="pill ${l.outcome==='SUCCEEDED'?'ok':'bad'}">${l.outcome==='SUCCEEDED'?'succeeded':'failed'}</span>
+          <span class="pill ${l.outcome==='SUCCEEDED'?'ok':l.outcome==='SENT_BACK'?'warn':'bad'}">${
+            l.outcome==='SUCCEEDED'?'succeeded':l.outcome==='SENT_BACK'?'sent back':'failed'}</span>
           <span>Attempt ${l.attempt}</span>
           <span class="mono">${esc(l.at)}</span>
           <span class="mono">${esc(USERS[l.by].name)}</span>
@@ -1380,6 +1353,7 @@ function dlgSign(workItemId){
   const w = r.workItems.find(x=>x.id===workItemId);
   const t = r.taskItems.find(x=>x.id===w.taskItemId);
   const def = TASK_DEFS[t.def];
+  const mode = refusalMode(t);
   openModal(`<div class="dialog" role="dialog" aria-modal="true" aria-label="Sign off">
     <div class="dhead">
       <span style="color:var(--accent)">${def.icon}</span>
@@ -1400,12 +1374,19 @@ function dlgSign(workItemId){
       <div style="font-size:12px;color:var(--ink-3);border-top:1px solid var(--border);padding-top:11px">
         Signing closes this work item and <b>execution continues on its own</b> — the remaining tasks
         run under the system identity, on behalf of ${esc(USERS[r.requester].name)}.
-        Refusing needs a reason in the Note field.
+        ${mode==='Not allowed'
+          ? `<div style="margin-top:7px;color:var(--warn)">${I.warn} This signature <b>cannot be refused</b>.
+             If it should not go ahead, the requester or an administrator cancels the run.</div>`
+          : mode==='Fail the task'
+          ? `Refusing marks this task <b>failed</b> and the run stops. Give the reason in the Note field.`
+          : `Refusing sends the request <b>back to ${esc(USERS[r.requester].name)}</b> as a change
+             request — nothing is marked failed. Give the reason in the Note field.`}
       </div>
     </div>
     <div class="dfoot">
       <button class="btn" data-act="close">Cancel</button>
-      <button class="btn" data-act="do-refuse" data-id="${w.id}">Refuse</button>
+      ${mode==='Not allowed'?'':`<button class="btn" data-act="do-refuse" data-id="${w.id}">
+        ${mode==='Fail the task'?'Refuse':'Decline &amp; send back'}</button>`}
       <button class="btn go" data-act="do-sign" data-id="${w.id}">${I.check} Sign</button>
     </div>
   </div>`);
@@ -1457,31 +1438,43 @@ function unapprove(){
    in every engine that does this well the completion *is* the resume.
    --------------------------------------------------------------- */
 
-/* One task item, dispatched. Returns true if it succeeded. */
+/* One task item, dispatched.
+
+   Nothing here knows what the task *is* — it resolves the definition's input
+   bindings, calls the named server action, and stores whatever the action
+   returned according to the output mappings. All four helpers live in
+   task-editor.js, which owns the definition model. Returns true on success. */
 async function runOneTask(r,t,actor){
   const d = TASK_DEFS[t.def];
   t.status='RUNNING'; render();
   await sleep(520);
   t.attempts++;
-  const fails = t.def==='cablePatch'
-    && t.config.operation==='Connect'
-    && OCCUPIED_PORTS.includes((t.config.targetPort||'').trim());
-  if(fails){
+
+  const inputs = resolveInputs(d,t,r);
+  const call   = renderResolvedCall(d,t,r);
+
+  if(actionFails(d,inputs)){
     t.status='FAILED';
-    t.error=`Port ${t.config.targetPort} is already carrying cable CBL-88213.`;
+    t.error=`Port ${inputs.targetPort} is already carrying cable CBL-88213.`;
     r.logs.push({taskId:t.id, attempt:t.attempts, at:stamp(), outcome:'FAILED', ms:1380, ...actor,
-      detail:`BusinessLogicError: Port ${t.config.targetPort} is already carrying cable CBL-88213.\n`
+      detail:`${call}\n`
+           + `BusinessLogicError: Port ${inputs.targetPort} is already carrying cable CBL-88213.\n`
            + `  at de.aixpertsoft.taskrequest.actions.CablePatchAction.perform(CablePatchAction.java:118)\n`
            + `  at de.aixpertsoft.action.ActionExecutor.run(ActionExecutor.java:64)`});
     note(r,`ran ${d.label} — failed`, actor.by);
     render();
     return false;
   }
+
+  const produced = runServerAction(d, inputs, r);
+  const stored   = applyOutputs(d, produced, r);
   t.status='SUCCEEDED'; t.error=null;
-  t.outputs = d.outputs ? d.outputs(t.config,r) : null;
+  t.outputs = Object.keys(produced).length ? produced : null;
   r.logs.push({taskId:t.id, attempt:t.attempts, at:stamp(), outcome:'SUCCEEDED', ms:410, ...actor,
-    detail:`${d.label} completed — ${d.summary(t.config)}`
-         + (t.outputs?`\noutputs:\n`+Object.entries(t.outputs).map(([k,v])=>`  ${k}: ${v}`).join('\n'):'')});
+    detail:`${call}\n${d.label} completed — ${taskSummary(d,t.config)}`
+         + (t.outputs?`\nreturned:\n`+Object.entries(t.outputs).map(([k,v])=>`  ${k}: ${v}`).join('\n'):'')
+         + (Object.keys(stored).length?`\nstored on the request:\n`
+             +Object.entries(stored).map(([k,v])=>`  request.${k} = ${v}`).join('\n'):'')});
   note(r,`ran ${d.label} — succeeded`, actor.by);
   render();
   return true;
@@ -1567,24 +1560,49 @@ async function completeWorkItem(id,result){
   await driveRun(r);
 }
 
+/* What a refusal means is configured per task, because it differs per step.
+   Refusing is a decision, not a breakage — so the default routes the request
+   back to whoever can act on it rather than marking anything failed. */
+function refusalMode(t){ return t.config.onRefusal || 'Send back'; }
+
 function rejectWorkItem(id,reason){
   const r=req();
   const w=r.workItems.find(x=>x.id===id); if(!w||w.state!=='OPEN') return;
   const t=r.taskItems.find(x=>x.id===w.taskItemId);
   const d=TASK_DEFS[t.def];
+  const mode=refusalMode(t);
+  if(mode==='Not allowed'){ toast('This signature cannot be refused — cancel the run instead'); return; }
+
+  /* The refusal itself is recorded the same way whatever the mode. */
   w.state='REJECTED'; w.rejectionReason=reason; w.completedBy=S.me; w.completedAt=stamp();
-  t.status='FAILED'; t.error=`Signature refused: ${reason}`; t.attempts++;
-  r.logs.push({taskId:t.id, attempt:t.attempts, at:stamp(), by:S.me, outcome:'FAILED', ms:0,
-    detail:`${d.label} refused by ${USERS[S.me].name}.\n  reason: ${reason}`});
-  note(r,`refused to sign "${w.title}"`);
   r.run.waitingOn=null;
-  if(S.definition.onError==='STOP'){
-    r.run.state='FAILED'; r.run.finishedAt=stamp();
-    closeModal(); render(); toast('Signature refused — the run stopped here');
-  }else{
-    r.run.cursor++; r.run.resumed=true; r.run.triggeredBy=S.me;
-    closeModal(); render(); driveRun(r);
+
+  if(mode==='Fail the task'){
+    t.status='FAILED'; t.error=`Signature refused: ${reason}`; t.attempts++;
+    r.logs.push({taskId:t.id, attempt:t.attempts, at:stamp(), by:S.me, outcome:'FAILED', ms:0,
+      detail:`${d.label} refused by ${USERS[S.me].name}.\n  reason: ${reason}`});
+    note(r,`refused to sign "${w.title}" — the task failed`);
+    if(S.definition.onError==='STOP'){
+      r.run.state='FAILED'; r.run.finishedAt=stamp();
+      closeModal(); render(); toast('Signature refused — the run stopped here');
+    }else{
+      r.run.cursor++; r.run.resumed=true; r.run.triggeredBy=S.me;
+      closeModal(); render(); driveRun(r);
+    }
+    return;
   }
+
+  /* Send back: nothing failed. The task never ran, the run ends, and the refusal
+     becomes an open change request — which the existing rule turns into a red gate. */
+  t.status='NOT_RUN';
+  r.logs.push({taskId:t.id, attempt:t.attempts, at:stamp(), by:S.me, outcome:'SENT_BACK', ms:0,
+    detail:`${d.label} declined by ${USERS[S.me].name}; sent back to the requester.\n  reason: ${reason}`});
+  r.changeRequests.push({id:'cr'+(++S.seq), user:S.me, resolved:false, at:stamp(),
+    text:`Declined to sign "${w.title}": ${reason}`});
+  r.run.state='SENT_BACK'; r.run.finishedAt=stamp();
+  note(r,`declined "${w.title}" and sent the request back`);
+  closeModal(); render();
+  toast('Sent back to the requester — nothing was marked failed');
 }
 
 /* Ad-hoc dispatch of one task, outside a run. Deliberately still clickable when
@@ -1601,8 +1619,13 @@ async function runSingle(id){
   await runOneTask(r,t,{by:S.me});
 }
 
+/* Ending a parked run is the requester's or an administrator's call, never the
+   signer's — otherwise "sign or nothing" is defeated by cancelling instead. */
+function mayCancel(r){ return r.requester===S.me || hasRole(S.me,'Administrator'); }
+
 function cancelRun(){
   const r=req(); if(!runInFlight(r)) return;
+  if(!mayCancel(r)){ toast('Only the requester or an administrator may cancel a run'); return; }
   openWorkItems(r).forEach(w=>{ w.state='CANCELLED'; });
   r.taskItems.filter(t=>t.status==='WAITING').forEach(t=>{ t.status='NOT_RUN'; });
   r.run.state='CANCELLED'; r.run.finishedAt=stamp();
@@ -1622,7 +1645,7 @@ document.addEventListener('click', e=>{
   if(av){ S.me=av.dataset.user; render(); toast(`Now viewing as ${USERS[S.me].name}`); return; }
 
   const nav = e.target.closest('[data-nav]');
-  if(nav){ S.screen = nav.dataset.nav==='inbox'?'inbox':'definition'; render(); return; }
+  if(nav){ S.screen = nav.dataset.nav; render(); return; }
 
   const openRow = e.target.closest('[data-open]');
   if(openRow){ S.openRequestId=openRow.dataset.open; S.screen='request'; S.requestTab='tasks'; render(); return; }
@@ -1796,5 +1819,12 @@ S = seed();
     r.approvals.forEach(a=>{ if(a.hash===null) a.hash=h; });
   });
 })();
-render();
+/* First paint happens after the task-definition catalogue has loaded — see below. */
 </script>
+
+<!-- The task-definition catalogue, then the editor that owns it. Classic scripts,
+     not modules: module scripts and fetch() of a sibling .json are both blocked
+     over file://, and this prototype has to survive being double-clicked. -->
+<script src="task-definitions.json.js"></script>
+<script src="task-editor.js"></script>
+<script>render();</script>

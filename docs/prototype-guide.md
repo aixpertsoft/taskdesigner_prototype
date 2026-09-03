@@ -180,9 +180,30 @@ continued" state that somebody has to chase.
   *on behalf of* M. Browett, *triggered by* K. Weber. The person who pressed Execute was long gone,
   and a system whose purpose is recording who agreed to what cannot be vague about that.
 
-**Also try:** *Refuse* instead of signing — with `onError: STOP` the run ends there and the last task
-stays `NOT_RUN`, with the reason on the record. Or **Cancel run** while parked, and watch the request
-become editable again with the completed steps keeping their status.
+### What happens if they will not sign
+
+A refusal is a decision, not a breakage — so marking the task *failed* is the wrong default. It
+paints a red error badge over a considered human answer and offers *re-run* as the recovery, when the
+real recovery is to send the request back to whoever can change it. So the signature task carries an
+**If refused** setting, visible on the card and part of the configuration (which means it is hashed,
+which means reviewers approve it):
+
+| Setting | What a refusal does |
+| --- | --- |
+| **Send back** *(default)* | The run ends, the signature goes back to *not run*, and **nothing is marked failed**. The reason is filed as an open change request — so the gate turns red and the request cannot run again until it is resolved. |
+| **Fail the task** | The task is marked failed and the run stops, exactly like a task that errored. |
+| **Not allowed** | There is no Refuse button. Sign, or the run stays parked. |
+
+**Try the send-back loop on TR-1039.** Park it on the signature, switch to K. Weber, press **Decline
+& send back** with a reason. Nothing turns red-failed; instead the *Conversation* tab has a new open
+change request in her name, and the bar reads **1 thing still needs doing**. Resolve it as the
+requester and execute again — the cable and the document are already done, so the run goes straight
+back to the signature.
+
+**On "sign or nothing":** a work item nobody may decline could park forever, so two rules keep it
+honest. Cancelling a run is always available, and cancelling is the **requester's or an
+administrator's** call — never the assigned signer's. Otherwise the signer just cancels instead of
+declining and the setting means nothing. Try it as J. Novak: the Cancel run button is disabled.
 
 ---
 
@@ -191,8 +212,9 @@ become editable again with the completed steps keeping their status.
 **Status workflow** — the transition graph, with the roles allowed on each arrow. In the real
 implementation this is the existing `ProjectStatusTransitionsDef` React Flow editor, not a new one.
 
-**Allowed tasks** — which task types may be added to a request of this type. The list comes from the
-server's registry.
+**Allowed tasks** — which task types may be added to a request of this type. The catalogue is
+authored on the **Task types** screen and stored as `task-definitions.json`; each entry wraps a
+server action the platform can already run, or is closed by a person.
 
 **Data parameters** — fields copied into every new request, then edited per request. The prototype
 keeps the original document's name/value idea but adds types, because retrofitting types into

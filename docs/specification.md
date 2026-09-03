@@ -109,7 +109,7 @@ Base: `{restURL()}/…` → `https://{host}/aixboms/rest/…`. Bearer token via 
 | `POST` | `/taskrequests/{id}/transitions` | `{ toStatus }` — guarded by the status graph |
 | `POST` | `/taskrequests/{id}/execute` | Start a run — returns when it pauses or finishes |
 | `GET` | `/taskrequests/{id}/runs`, `/runs/{runId}` | Run state |
-| `POST` | `/taskrequests/{id}/runs/{runId}/cancel` | Abandon a paused run and unlock authoring |
+| `POST` | `/taskrequests/{id}/runs/{runId}/cancel` | Abandon a paused run and unlock authoring — **requester or Administrator only**, never the assigned signer |
 | `GET` | `/taskrequests/{id}/executions?taskItemId=` | Execution log |
 
 **Work items** — top-level, because they are an inbox and their actor may not be able to address the
@@ -121,7 +121,7 @@ parent request.
 | `GET` | `/workitems/{wid}` | One work item, with its `context` |
 | `POST` | `/workitems/{wid}/claim` | Take a candidate-group item |
 | `POST` | `/workitems/{wid}/complete` | `{ result }` — validate, log, **resume the run** |
-| `POST` | `/workitems/{wid}/reject` | `{ reason }` — honours `onError` |
+| `POST` | `/workitems/{wid}/reject` | `{ reason }` — honours the item's `RefusalPolicy`; `403` under `NOT_ALLOWED` |
 
 Every mutating sub-resource returns the **refreshed `TaskRequestDTO`**, so the client never guesses
 at derived state (status, task item statuses, invalidated approvals, new version).
@@ -254,8 +254,14 @@ be a loop inside one HTTP call, because a signature takes days. Note that the sa
 slow automatic tasks, which the original non-goals flagged as needing a revisit.
 
 ```ts
-export type RunState      = 'RUNNING' | 'WAITING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+export type RunState      = 'RUNNING' | 'WAITING' | 'COMPLETED' | 'FAILED'
+                          | 'CANCELLED'          // an operator abandoned it
+                          | 'SENT_BACK';         // a signer declined and returned it to the author
 export type WorkItemState = 'OPEN' | 'CLAIMED' | 'COMPLETED' | 'REJECTED' | 'CANCELLED' | 'EXPIRED';
+
+/* Declared per manual task item, so it is inside taskConfigHash and therefore
+   covered by approval: reviewers sign off on whether a signature may be declined. */
+export type RefusalPolicy = 'SEND_BACK' | 'FAIL' | 'NOT_ALLOWED';
 
 export interface ExecutionRunDTO {
   id: string; taskRequestId: string;
@@ -301,6 +307,35 @@ binding is a later feature.
 and GitHub Actions alike, closing the human task *is* the resume signal. A separate button means two
 clicks for one decision and creates a "signed but not continued" limbo somebody has to chase. A
 per-definition flag for an explicit operator release is a documented extension, not the default.
+
+#### What a refusal means is configurable
+
+A refusal is **a decision, not a breakage**. Treating it as a task failure is wrong by default: it
+paints a red badge and an error where a considered human answer belongs, and it offers *re-run* as
+the recovery when the actual recovery is to route the request back to whoever can change it. But some
+steps genuinely have no "no" — a compliance signature is given or the change does not proceed. So the
+manual task item declares a `RefusalPolicy`:
+
+| Policy | Effect |
+| --- | --- |
+| `SEND_BACK` *(default)* | Work item → `REJECTED`, task item back to `NOT_RUN`, run ends `SENT_BACK`. **Nothing is marked failed.** The reason is filed as an **unresolved change request**, which the existing `noUnresolvedChangeRequests` rule turns into a red gate — so the request cannot re-execute until it is dealt with. Re-running afterwards skips the task items that already succeeded. |
+| `FAIL` | Task item → `FAILED`; `definition.onError` decides `STOP` or `CONTINUE`. For steps where a refusal really is an error condition. |
+| `NOT_ALLOWED` | `POST /workitems/{wid}/reject` returns **403**. Sign, or the run stays parked. |
+
+Reusing change requests here is the point: a refusal to sign *is* "request changes" raised
+mid-execution, the gate re-blocking falls out of a rule that already exists, and the requester finds
+the objection in the conversation where every other objection lives. No new rule, no new surface.
+
+**`NOT_ALLOWED` needs an escape hatch, and cancelling is it.** A work item that cannot be declined and
+is not signed would otherwise park forever. Two invariants make that safe:
+
+1. **Cancelling a run is always available**, and it is the only way out of a `NOT_ALLOWED` item.
+2. **Cancelling is the requester's or an administrator's authority, never the assigned signer's** —
+   otherwise "sign or nothing" is defeated by the signer cancelling instead of declining.
+
+A refusal is recorded on the work item (`state`, `rejectionReason`, `completedBy`, `completedAt`) and
+in the execution log under all policies, including `SEND_BACK` where the log row outcome is
+`SENT_BACK`. Declining is never silent.
 
 ### Rules
 
@@ -621,5 +656,12 @@ columns**, because `GET /workitems?assignedToMe` is the query that makes manual 
    - **Frozen-plan test** — while the run is `WAITING`, `POST /taskrequests` with an edited task
      config must return `409 RUN_IN_PROGRESS`, and the `taskConfigHash` must be unchanged afterwards.
    - **Wrong-signer test** — `complete` called by a user outside `assignedRoles` must return `403`.
-   - **Refusal test** — `POST /workitems/{wid}/reject` with `onError: STOP` leaves the run `FAILED`
-     and later tasks `NOT_RUN`; the reason is on the work item and in the log.
+   - **Refusal tests**, one per policy:
+     - `SEND_BACK` — the run ends `SENT_BACK`, **no task item is `FAILED`**, the declined item is back
+       at `NOT_RUN`, an unresolved change request appears carrying the reason, and the gate is red
+       again. Resolve it, re-execute, and the already-succeeded tasks are not re-run.
+     - `FAIL` — task `FAILED`, run `FAILED` under `onError: STOP`, later tasks `NOT_RUN`, and **no**
+       change request is filed.
+     - `NOT_ALLOWED` — `reject` returns `403` and the run stays `WAITING`.
+   - **Cancel authority test** — `runs/{runId}/cancel` must return `403` for the assigned signer and
+     succeed for the requester and for an Administrator. Without this, `NOT_ALLOWED` is decorative.
