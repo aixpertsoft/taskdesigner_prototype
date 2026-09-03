@@ -20,16 +20,24 @@
                   is why a run does not dismiss its own approvals.
 
      taskFlow[]
-       stepId          stable id, so a step survives being reordered
-       taskDefinition  name from task-definitions.json
-       required        the requester may not remove this step
-       defaults        pre-filled into the task item at creation
-       skipWhen        TaskRule[] — if satisfied when the run arrives, the step
-                       is marked SKIPPED and the run carries on
-       requires        TaskRule[] — if not satisfied, the run parks on a blocker.
-                       These cannot be executionRules: the value they need may be
-                       produced by an earlier step, so they are only knowable at
-                       run time.
+       AUTHORING — what the requester gets, and what they may change
+         stepId          stable id, so a step survives being reordered
+         taskDefinition  name from task-definitions.json
+         required        the requester may not remove this step
+         defaults        pre-filled into the task item at creation
+
+       runtimeConfig — how the ENGINE behaves at this step. None of it is shown
+       to the requester or editable by them; all of it is inside the approval
+       hash, because what an approver approved includes how the step behaves.
+         onRefusal       what declining does: "Send back" (default), "Fail the
+                         task", or "Not allowed". null falls back to the task
+                         type's own onRefusalDefault.
+         skipWhen        TaskRule[] — if satisfied when the run arrives, the step
+                         is marked SKIPPED and the run carries on
+         requires        TaskRule[] — if not satisfied, the run parks on a blocker.
+                         These cannot be executionRules: the value they need may
+                         be produced by an earlier step, so they are only knowable
+                         at run time.
 
    The flow is LINEAR by design. Steps run in order and a step may be skipped;
    there is no branching, no parallelism and no loops. That is the line between
@@ -67,9 +75,9 @@ window.REQUEST_TYPES = {
         {"name": "skipApproval", "label": "Skip the approval step", "type": "boolean", "owner": "AUTHOR",
          "defaultValue": false},
 
-        {"name": "noticeSubject", "label": "Notice subject", "type": "text", "owner": "EXECUTION",
+        {"name": "notificationSubject", "label": "Notification subject", "type": "text", "owner": "EXECUTION",
          "defaultValue": ""},
-        {"name": "noticeBody", "label": "Notice text", "type": "text", "owner": "EXECUTION",
+        {"name": "notificationBody", "label": "Notification text", "type": "text", "owner": "EXECUTION",
          "defaultValue": ""},
         {"name": "recipients", "label": "Recipients", "type": "text", "owner": "EXECUTION",
          "defaultValue": ""},
@@ -88,35 +96,47 @@ window.REQUEST_TYPES = {
       "taskFlow": [
         {
           "stepId": "s1",
-          "taskDefinition": "draftNotice",
+          "taskDefinition": "draftNotification",
           "required": true,
-          "defaults": {"assignedRole": "NetOps", "dueBy": "11.09.2026", "onRefusal": "Send back"},
-          "skipWhen": [],
-          "requires": []
+          "defaults": {"assignedRole": "NetOps", "dueBy": "11.09.2026"},
+          "runtimeConfig": {
+            "onRefusal": "Send back",
+            "skipWhen": [],
+            "requires": []
+          }
         },
         {
           "stepId": "s2",
-          "taskDefinition": "signNotice",
+          "taskDefinition": "signNotification",
           "required": true,
           "defaults": {"signedBy": "AixBOMS Change Management"},
-          "skipWhen": [],
-          "requires": []
+          "runtimeConfig": {
+            "onRefusal": null,
+            "skipWhen": [],
+            "requires": []
+          }
         },
         {
           "stepId": "s3",
-          "taskDefinition": "approveNotice",
+          "taskDefinition": "approveNotification",
           "required": false,
-          "defaults": {"assignedRole": "Administrator", "dueBy": "12.09.2026", "onRefusal": "Send back"},
-          "skipWhen": [{"kind": "data", "path": "skipApproval", "op": "truthy"}],
-          "requires": []
+          "defaults": {"assignedRole": "Administrator", "dueBy": "12.09.2026"},
+          "runtimeConfig": {
+            "onRefusal": "Send back",
+            "skipWhen": [{"kind": "data", "path": "skipApproval", "op": "truthy"}],
+            "requires": []
+          }
         },
         {
           "stepId": "s4",
-          "taskDefinition": "sendNotice",
+          "taskDefinition": "sendNotification",
           "required": true,
           "defaults": {"fromAddress": "change@aixpertsoft.de"},
-          "skipWhen": [],
-          "requires": [{"kind": "data", "path": "sha256", "op": "truthy"}]
+          "runtimeConfig": {
+            "onRefusal": null,
+            "skipWhen": [],
+            "requires": [{"kind": "data", "path": "sha256", "op": "truthy"}]
+          }
         }
       ]
     }

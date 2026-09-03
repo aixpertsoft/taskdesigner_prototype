@@ -13,14 +13,21 @@
    becoming a second copy of de.comconsult.wf; a conditional skip is a one-armed
    router, and the arm is all this subsystem should ever grow.
 
-   Per step:
-     required  — the requester may not remove it
-     defaults  — default values, pre-filled into the task when instantiated
-     skipWhen  — TaskRule[]; if satisfied when the cursor arrives, the step is
-                 marked SKIPPED and the run carries on
-     requires  — TaskRule[]; if unsatisfied, the run parks on a blocker work item.
-                 These cannot be gate rules: the value may be produced by an
-                 earlier step, so they can only be judged at run time.
+   A step has two halves, and the split is the point:
+
+     AUTHORING — what the requester gets and may change
+       required  — the requester may not remove it
+       defaults  — pre-filled into the task when instantiated
+
+     runtimeConfig — how the ENGINE behaves here. Never shown to the requester,
+     never editable by them, but inside the approval hash all the same, because
+     what an approver approved includes how the step behaves.
+       onRefusal — what declining does; null falls back to the task type default
+       skipWhen  — TaskRule[]; if satisfied when the cursor arrives, the step is
+                   marked SKIPPED and the run carries on
+       requires  — TaskRule[]; if unsatisfied, the run parks on a blocker work
+                   item. These cannot be gate rules: the value may be produced by
+                   an earlier step, so they can only be judged at run time.
 
    Both rule lists reuse evaluateRule() from index.html unchanged — there is no
    second rule engine and no expression language.
@@ -89,6 +96,13 @@ function viewDefinition(){
   </div>`;
 }
 
+/* The runtime half of a step: how the engine behaves when it gets here. Created
+   lazily so a document written before the block existed still opens. */
+function rc(step){
+  if(!step.runtimeConfig) step.runtimeConfig = {onRefusal:null, skipWhen:[], requires:[]};
+  return step.runtimeConfig;
+}
+
 /* ---------------------------------------------------------------- task flow */
 function flowStep(step,i){
   const d = TASK_DEFS[step.taskDefinition];
@@ -106,8 +120,10 @@ function flowStep(step,i){
           ${d.manual?`<span class="pill neutral">manual</span>`:`<span class="pill blue">server</span>`}
           ${step.required?`<span class="pill ok">required</span>`
                          :`<span class="pill neutral">optional</span>`}
-          ${(step.skipWhen||[]).length?`<span class="pill warn">skippable</span>`:''}
-          ${(step.requires||[]).length?`<span class="pill warn">has a precondition</span>`:''}
+          ${(rc(step).skipWhen||[]).length?`<span class="pill warn">skippable</span>`:''}
+          ${(rc(step).requires||[]).length?`<span class="pill warn">has a precondition</span>`:''}
+          ${d.manual && refusalMode({def:step.taskDefinition, onRefusal:rc(step).onRefusal})==='Not allowed'
+            ? `<span class="pill bad">cannot be declined</span>`:''}
         </div>
         <div class="flowsub">${esc(defaultsSummary(d,step))}</div>
       </div>
@@ -132,46 +148,65 @@ function flowStep(step,i){
       </label>
 
       <h4>Default values</h4>
-      <span class="hint">Pre-filled into the task when a request is created. The requester can still
-        change them; values that must come from the request at run time are input mappings on the
-        task type, not defaults.</span>
+      <span class="hint">Pre-filled into the task when a request is created. Fields marked
+        <b>fixed</b> or <b>hidden</b> on the task type can only be set here — the requester cannot
+        change them, so a required one needs a value. Values that must come from the request at run
+        time are input mappings on the task type, not defaults.</span>
       <div class="formgrid" style="padding:0;max-width:none">
         ${d.params.length? d.params.map(p=>{
           const v = (step.defaults||{})[p.name] ?? '';
-          if(p.type==='enum') return `<div class="field"><label>${esc(p.label)}</label>
+          const flag = p.hidden   ? ' <span class="pill warn">hidden</span>'
+                     : p.readonly ? ' <span class="pill neutral">fixed</span>' : '';
+          const warn = (p.required && !v && (p.hidden||p.readonly))
+            ? `<span class="hint" style="color:var(--bad)">Required, and the requester cannot set
+                it — give it a value here.</span>` : '';
+          if(p.type==='enum') return `<div class="field"><label>${esc(p.label)}${flag}</label>
             <select data-rt="cfg" data-i="${i}" data-k="${p.name}">
               <option value="">—</option>
               ${(p.values||[]).map(o=>`<option ${o===v?'selected':''}>${esc(o)}</option>`).join('')}
-            </select></div>`;
-          return `<div class="field"><label>${esc(p.label)}</label>
+            </select>${warn}</div>`;
+          return `<div class="field"><label>${esc(p.label)}${flag}</label>
             <input type="text" data-rt="cfg" data-i="${i}" data-k="${p.name}"
-              value="${esc(v)}" placeholder="${esc(p.placeholder||'')}"></div>`;
+              value="${esc(v)}" placeholder="${esc(p.placeholder||'')}">${warn}</div>`;
         }).join('') : `<div style="font-size:12.5px;color:var(--ink-3)">This task type has no
           configuration fields.</div>`}
       </div>
 
-      <h4 style="margin-top:14px">Skip this step when…</h4>
+      <h4 class="rtsec">Runtime configuration</h4>
+      <span class="hint">How the engine behaves when it reaches this step. None of it is shown to
+        the requester or editable by them — but all of it is inside the approval hash, because what
+        an approver approved includes how the step behaves.</span>
+
+      ${d.manual?`
+      <h5>If the person declines</h5>
+      <select data-rt="onrefusal" data-i="${i}" style="width:auto">
+        <option value="" ${!rc(step).onRefusal?'selected':''}>Use the task type's default (${esc(d.onRefusalDefault||'Send back')})</option>
+        ${['Send back','Fail the task','Not allowed'].map(v=>
+          `<option ${rc(step).onRefusal===v?'selected':''}>${v}</option>`).join('')}
+      </select>`:''}
+
+      <h5>Skip this step when…</h5>
       <span class="hint">Evaluated once, when the run reaches this step. If it matches, the step is
         recorded as <b>skipped</b> and the run carries straight on.</span>
-      ${ruleRows(step,'skipWhen',i,dataParams,'Never skipped.')}
+      ${ruleRows(rc(step),'skipWhen',i,dataParams,'Never skipped.')}
 
-      <h4 style="margin-top:14px">Do not start until…</h4>
+      <h5>Do not start until…</h5>
       <span class="hint">Checked at run time, because the value may be produced by an earlier step.
         If it is not satisfied the run parks on a blocker until somebody supplies it.</span>
-      ${ruleRows(step,'requires',i,dataParams,'No precondition.')}
+      ${ruleRows(rc(step),'requires',i,dataParams,'No precondition.')}
     </div>`:''}
   </div>`;
 }
 
 function defaultsSummary(d,step){
-  const vals = (d.params||[]).filter(p=>(step.defaults||{})[p.name])
+  const vals = (d.params||[]).filter(p=>!p.hidden && (step.defaults||{})[p.name])
     .map(p=>`${p.label}: ${step.defaults[p.name]}`);
   return vals.length ? vals.join(' · ') : 'no defaults set';
 }
 
 /* Both rule lists are TaskRule[] of kind 'data' — the same shape the gate uses. */
-function ruleRows(step,which,i,dataParams,emptyText){
-  const list = step[which]||[];
+function ruleRows(runtime,which,i,dataParams,emptyText){
+  const list = runtime[which]||[];
   return `
     ${list.length? list.map((rule,j)=>`
       <div class="te-map">
@@ -368,16 +403,17 @@ document.addEventListener('click', e=>{
     case 'add-step': dlgAddStep(); break;
     case 'pick-step':{
       const id = 's'+(++S.seq);
-      flow.push({stepId:id, taskDefinition:btn.dataset.def, required:false, defaults:{}, skipWhen:[], requires:[]});
+      flow.push({stepId:id, taskDefinition:btn.dataset.def, required:false, defaults:{},
+        runtimeConfig:{onRefusal:null, skipWhen:[], requires:[]}});
       S.flowOpen = id;
       closeModal(); render(); toast('Step added — set its defaults'); break;
     }
     case 'add-rule':
-      (flow[i][btn.dataset.w] = flow[i][btn.dataset.w]||[])
+      (rc(flow[i])[btn.dataset.w] = rc(flow[i])[btn.dataset.w]||[])
         .push({kind:'data', path:S.definition.dataParameters[0].name, op:'truthy'});
       render(); break;
     case 'del-rule':
-      flow[i][btn.dataset.w].splice(+btn.dataset.j,1); render(); break;
+      rc(flow[i])[btn.dataset.w].splice(+btn.dataset.j,1); render(); break;
   }
 });
 
@@ -387,8 +423,9 @@ document.addEventListener('change', e=>{
   const i = +el.dataset.i;
   if(rt==='required'){ flow[i].required = el.checked; render(); return; }
   if(rt==='cfg'){ flow[i].defaults[el.dataset.k] = el.value; render(); return; }
-  if(rt==='rule-path'){ flow[i][el.dataset.w][+el.dataset.j].path = el.value; render(); return; }
-  if(rt==='rule-op'){ flow[i][el.dataset.w][+el.dataset.j].op = el.value; render(); return; }
+  if(rt==='onrefusal'){ rc(flow[i]).onRefusal = el.value || null; render(); return; }
+  if(rt==='rule-path'){ rc(flow[i])[el.dataset.w][+el.dataset.j].path = el.value; render(); return; }
+  if(rt==='rule-op'){ rc(flow[i])[el.dataset.w][+el.dataset.j].op = el.value; render(); return; }
 });
 
 /* ============================ styles ============================ */
@@ -411,6 +448,9 @@ document.head.insertAdjacentHTML('beforeend', `<style>
 .flowbody{padding:12px 13px;border-top:1px solid var(--border);background:var(--surface-2)}
 .flowbody h4{margin:0 0 4px;font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;
   color:var(--ink-2)}
+.flowbody h4.rtsec{margin-top:16px;padding-top:13px;border-top:1px solid var(--border-strong);
+  color:var(--accent)}
+.flowbody h5{margin:14px 0 5px;font-size:12.5px;font-weight:600;color:var(--ink)}
 .flowbody .hint{display:block;margin-bottom:8px}
 .flowbody .formgrid{grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px}
 </style>`);

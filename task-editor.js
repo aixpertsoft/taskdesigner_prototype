@@ -377,8 +377,14 @@ function fieldRows(list, which){
              value="${esc((p.values||[]).join(', '))}" placeholder="option, option" style="flex:1;min-width:120px">`
         : `<input type="text" data-te-f="${which}" data-i="${i}" data-k="placeholder"
              value="${esc(p.placeholder||'')}" placeholder="placeholder" style="flex:1;min-width:120px">`}
-      <label class="switch" title="Required"><input type="checkbox" data-te-f="${which}" data-i="${i}" data-k="required" ${p.required?'checked':''}>
-        <span class="track"></span><span style="font-size:12px">req</span></label>
+      <span class="flags">
+        ${[['required','required','Must have a value'],
+            ['readonly','fixed','Shown in the request, but not editable there'],
+            ['hidden','hidden','Not shown in the request at all']].map(([k,txt,tip])=>
+          `<label class="flagchip ${p[k]?'on':''}" title="${tip}">
+            <input type="checkbox" data-te-f="${which}" data-i="${i}" data-k="${k}" ${p[k]?'checked':''}>${txt}
+          </label>`).join('')}
+      </span>
       <button class="btn sm ico" data-te="del-field" data-f="${which}" data-i="${i}" title="Remove field">${I.trash}</button>
     </div>`).join('');
 }
@@ -591,14 +597,24 @@ function previewHTML(d, issues){
   <section class="panel">
     <div class="panel-head"><h3>What the requester sees</h3></div>
     <div class="panel-body">
-      ${(d.params||[]).length ? (d.params||[]).map(p=>`
-        <div class="field">
-          <label>${esc(p.label||p.name||'—')} ${p.required?'<span class="req">*</span>':''}</label>
-          ${p.type==='enum'
-            ? `<select disabled>${(p.values||[]).map(v=>`<option>${esc(v)}</option>`).join('')}</select>`
-            : `<input type="text" disabled placeholder="${esc(p.placeholder||'')}">`}
-        </div>`).join('')
-        : `<div style="font-size:12.5px;color:var(--ink-3)">No fields — nothing to fill in.</div>`}
+      ${(()=>{
+        const all = d.params||[];
+        const shown = all.filter(p=>!p.hidden);
+        const hidden = all.filter(p=>p.hidden);
+        if(!all.length) return `<div style="font-size:12.5px;color:var(--ink-3)">No fields — nothing to fill in.</div>`;
+        return shown.map(p=>`
+          <div class="field">
+            <label>${esc(p.label||p.name||'—')} ${p.required?'<span class="req">*</span>':''}${
+              p.readonly?' <span class="pill neutral">fixed</span>':''}</label>
+            ${p.type==='enum'
+              ? `<select disabled>${(p.values||[]).map(v=>`<option>${esc(v)}</option>`).join('')}</select>`
+              : `<input type="text" disabled placeholder="${esc(p.placeholder||'')}">`}
+          </div>`).join('')
+          + (shown.length?'':`<div style="font-size:12.5px;color:var(--ink-3)">Nothing — every field
+              is set by the request type.</div>`)
+          + (hidden.length?`<span class="hint">Not shown to the requester:
+              ${hidden.map(p=>esc(p.label||p.name)).join(', ')}.</span>`:'');
+      })()}
     </div>
   </section>
 
@@ -736,8 +752,11 @@ document.addEventListener('change', e=>{
   }
   if(el.dataset.teF){
     const list = d[el.dataset.teF], p = list[+el.dataset.i], k = el.dataset.k;
-    if(k==='required') p.required = el.checked;
-    else if(k==='values') p.values = el.value.split(',').map(s=>s.trim()).filter(Boolean);
+    /* The flag chips show their state through the .on class, which only a full
+       render rebuilds — the checkbox inside them is invisible. So a flag toggle
+       must render, not just repaint the preview, or the chip lags a click behind. */
+    if(k==='required'||k==='readonly'||k==='hidden'){ p[k] = el.checked; render(); return; }
+    if(k==='values') p.values = el.value.split(',').map(s=>s.trim()).filter(Boolean);
     else p[k] = el.value;
     /* A renamed result field is a renamed output row — keep them in step. */
     if(k==='type' || k==='name'){ syncBindings(d); render(); return; }
@@ -788,6 +807,13 @@ document.head.insertAdjacentHTML('beforeend', `<style>
   border-radius:var(--r);background:var(--surface-2)}
 .te-field+.te-field{margin-top:6px}
 .te-field input[type=text],.te-field select{padding:4px 7px;font-size:12.5px;background:var(--surface)}
+.flags{display:flex;gap:3px}
+.flagchip{display:inline-flex;align-items:center;padding:2px 7px;border-radius:20px;font-size:11px;
+  border:1px solid var(--border);background:var(--surface);color:var(--ink-3);cursor:pointer;
+  user-select:none;white-space:nowrap}
+.flagchip.on{background:var(--accent-soft);border-color:var(--accent-line);color:var(--accent);
+  font-weight:600}
+.flagchip input{position:absolute;opacity:0;pointer-events:none}
 .te-num{width:20px;height:20px;flex:none;display:grid;place-items:center;font-size:11px;
   border-radius:4px;background:var(--surface-3);color:var(--ink-3)}
 .te-map{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:6px 0}

@@ -17,6 +17,12 @@
          params = the configuration UI: what the REQUESTER fills in when they
                   add this task to a request.
 
+         Two flags decide how much of that the requester actually gets. Both are
+         still set per step in the request type's task flow — they only restrict
+         the request-level form:
+           readonly  shown, but not editable in the request
+           hidden    not shown in the request at all
+
      kind: "SERVER"  ->  serverActionConfig
          action  = the annotated Groovy/Java the server already exposes
          inputs  = where each of that action's parameters comes from
@@ -41,17 +47,15 @@ window.TASK_DEFINITIONS = {
   "apiVersion": "aixboms.taskdefinition/v1",
   "definitions": [
     {
-      "name": "draftNotice",
-      "label": "Draft notice",
+      "name": "draftNotification",
+      "label": "Draft notification",
       "icon": "doc",
       "description": "A person writes the customer notification: subject, body and who receives it.",
       "kind": "MANUAL",
       "params": [
         {"name": "assignedRole", "label": "Who drafts it", "type": "enum", "required": true,
          "values": ["NetOps", "Administrator"]},
-        {"name": "dueBy", "label": "Due by", "type": "text", "placeholder": "11.09.2026"},
-        {"name": "onRefusal", "label": "If declined", "type": "enum", "required": true,
-         "values": ["Send back", "Fail the task", "Not allowed"]}
+        {"name": "dueBy", "label": "Due by", "type": "text", "placeholder": "11.09.2026"}
       ],
       "manualTaskConfig": {
         "completeLabel": "Submit draft",
@@ -64,27 +68,27 @@ window.TASK_DEFINITIONS = {
            "placeholder": "ops@kunde-a.de, noc@kunde-b.de"}
         ],
         "outputs": [
-          {"source": "subject",    "target": {"kind": "REQUEST_DATA", "path": "noticeSubject"}},
-          {"source": "body",       "target": {"kind": "REQUEST_DATA", "path": "noticeBody"}},
+          {"source": "subject",    "target": {"kind": "REQUEST_DATA", "path": "notificationSubject"}},
+          {"source": "body",       "target": {"kind": "REQUEST_DATA", "path": "notificationBody"}},
           {"source": "recipients", "target": {"kind": "REQUEST_DATA", "path": "recipients"}}
         ],
         "onRefusalDefault": "Send back"
       }
     },
     {
-      "name": "signNotice",
-      "label": "Sign notice",
+      "name": "signNotification",
+      "label": "Sign notification",
       "icon": "stamp",
       "description": "Fingerprints the exact wording, so what was approved and what was sent can be proven identical.",
       "kind": "SERVER",
       "params": [
         {"name": "signedBy", "label": "Signed on behalf of", "type": "text", "required": true,
-         "placeholder": "AixBOMS Change Management"}
+         "readonly": true, "placeholder": "AixBOMS Change Management"}
       ],
       "serverActionConfig": {
         "action": "digitallySign",
         "inputs": [
-          {"target": "text",   "source": {"kind": "REQUEST_DATA", "path": "noticeBody"}},
+          {"target": "text",   "source": {"kind": "REQUEST_DATA", "path": "notificationBody"}},
           {"target": "signer", "source": {"kind": "TASK_PARAM",   "path": "signedBy"}}
         ],
         "outputs": [
@@ -94,17 +98,15 @@ window.TASK_DEFINITIONS = {
       }
     },
     {
-      "name": "approveNotice",
-      "label": "Approve notice",
+      "name": "approveNotification",
+      "label": "Approve notification",
       "icon": "pen",
       "description": "An administrator approves the signed wording before it reaches customers.",
       "kind": "MANUAL",
       "params": [
         {"name": "assignedRole", "label": "Who approves", "type": "enum", "required": true,
          "values": ["Administrator", "NetOps"]},
-        {"name": "dueBy", "label": "Due by", "type": "text", "placeholder": "12.09.2026"},
-        {"name": "onRefusal", "label": "If declined", "type": "enum", "required": true,
-         "values": ["Send back", "Fail the task", "Not allowed"]}
+        {"name": "dueBy", "label": "Due by", "type": "text", "placeholder": "12.09.2026"}
       ],
       "manualTaskConfig": {
         "completeLabel": "Approve",
@@ -119,22 +121,22 @@ window.TASK_DEFINITIONS = {
       }
     },
     {
-      "name": "sendNotice",
-      "label": "Send notice",
+      "name": "sendNotification",
+      "label": "Send notification",
       "icon": "mail",
-      "description": "Sends the approved notice to the recipients and records what the mail server answered.",
+      "description": "Sends the approved notification to the recipients and records what the mail server answered.",
       "kind": "SERVER",
       "params": [
         {"name": "fromAddress", "label": "Sender", "type": "text", "required": true,
-         "placeholder": "change@aixpertsoft.de"}
+         "hidden": true, "placeholder": "change@aixpertsoft.de"}
       ],
       "serverActionConfig": {
         "action": "sendMail",
         "inputs": [
           {"target": "from",      "source": {"kind": "TASK_PARAM",   "path": "fromAddress"}},
           {"target": "to",        "source": {"kind": "REQUEST_DATA", "path": "recipients"}},
-          {"target": "subject",   "source": {"kind": "REQUEST_DATA", "path": "noticeSubject"}},
-          {"target": "body",      "source": {"kind": "REQUEST_DATA", "path": "noticeBody"}},
+          {"target": "subject",   "source": {"kind": "REQUEST_DATA", "path": "notificationSubject"}},
+          {"target": "body",      "source": {"kind": "REQUEST_DATA", "path": "notificationBody"}},
           {"target": "signature", "source": {"kind": "REQUEST_DATA", "path": "sha256"}}
         ],
         "outputs": [

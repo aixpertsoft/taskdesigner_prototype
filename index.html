@@ -554,8 +554,12 @@ function instantiateFlow(definition, seqBase){
     id:'ti'+(++n), def:step.taskDefinition, stepId:step.stepId, required:!!step.required,
     status:'NOT_RUN', attempts:0,
     config:copy(step.defaults||{}),
-    skipWhen:copy(step.skipWhen||[]),
-    requires:copy(step.requires||[]),
+    /* runtimeConfig is the administrator half: how the engine behaves at this
+       step. It sits on the item rather than in its config, so it never appears
+       in the task form the requester fills in. */
+    onRefusal:(step.runtimeConfig||{}).onRefusal || null,
+    skipWhen:copy((step.runtimeConfig||{}).skipWhen||[]),
+    requires:copy((step.runtimeConfig||{}).requires||[]),
   }));
 }
 function seed(){
@@ -641,7 +645,11 @@ function authorData(r){
   return out;
 }
 function taskConfigHash(r){
-  const items = (r.taskItems||[]).map(t=>({d:t.def, c:t.config, s:t.skipWhen, q:t.requires}));
+  /* onRefusal is in here even though the requester cannot set it: the task item
+     carries it, and what the approver approved includes whether this step may be
+     declined at all. */
+  const items = (r.taskItems||[]).map(t=>
+    ({d:t.def, c:t.config, s:t.skipWhen, q:t.requires, f:t.onRefusal}));
   return fnv(JSON.stringify({tasks:items, data:authorData(r)}));
 }
 
@@ -733,12 +741,32 @@ function render(){
   $('#tip').innerHTML = tipPanel();
   $('#tipbtn').setAttribute('aria-expanded', String(S.tipOpen));
   $('#tipbtn').classList.toggle('seen', S.tipSeen);
-  $('#screen').innerHTML =
-      S.screen==='inbox'      ? viewInbox()
-    : S.screen==='request'    ? viewRequest()
-    : S.screen==='definition' ? viewDefinition()
-    : S.screen==='taskdefs'   ? viewTaskDefs()   /* task-editor.js */
-    : '';
+  /* A crash while building a screen must be a visible card, not a button that
+     silently does nothing. The classic cause here is the Live Preview webview
+     serving a cached index.html next to fresh sibling .js files — two versions
+     of one program in the same page. */
+  try{
+    $('#screen').innerHTML =
+        S.screen==='inbox'      ? viewInbox()
+      : S.screen==='request'    ? viewRequest()
+      : S.screen==='definition' ? viewDefinition()
+      : S.screen==='taskdefs'   ? viewTaskDefs()   /* task-editor.js */
+      : '';
+  }catch(err){
+    console.error(err);
+    $('#screen').innerHTML = `
+      <div class="card" style="padding:22px;max-width:640px;margin:40px auto">
+        <h1 style="margin:0 0 10px;font-size:19px">This screen crashed while rendering</h1>
+        <div class="te-call mono">${esc(err && err.message || String(err))}</div>
+        <p style="color:var(--ink-2);font-size:13px;margin:12px 0 0">
+          If you just edited the prototype's files, the usual cause is the embedded preview serving
+          a <b>cached copy of one file next to fresh copies of the others</b> — two versions of the
+          same program on one page. Reload with <b>Ctrl&nbsp;+&nbsp;Shift&nbsp;+&nbsp;R</b>, or open
+          it in a real browser.</p>
+        <p style="color:var(--ink-3);font-size:12px;margin:8px 0 0">
+          The full stack trace is in the console (F12).</p>
+      </div>`;
+  }
 }
 
 function tipPanel(){
@@ -747,9 +775,9 @@ function tipPanel(){
     <h3>Try this</h3>
     <ol>
       <li>Open the request and press <b>Execute all tasks</b>. It runs step 1 and stops — a person
-        has to draft the notice.</li>
+        has to draft the notification.</li>
       <li>You are <b>M. Browett</b> (NetOps), so it is yours. Press <b>Draft</b> and write the
-        notice. The server fingerprints it, then parks again for an administrator.</li>
+        notification. The server fingerprints it, then parks again for an administrator.</li>
       <li>Switch to <b>K. Weber</b> (top right). <i>Awaiting my action</i> shows 1. Approve the
         wording — the mail sends by itself.</li>
       <li>Watch the <b>Data</b> tab fill in as it goes: subject, text, fingerprint, delivery status.</li>
@@ -942,7 +970,7 @@ function taskCard(r,t,locked){
           ${t.attempts>1?`<span class="pill neutral">attempt ${t.attempts}</span>`:''}
         </div>
         <div class="task-cfg">
-          ${def.params.filter(p=>t.config[p.name]).map(p=>
+          ${def.params.filter(p=>!p.hidden && t.config[p.name]).map(p=>
             `<span class="kv">${esc(p.label)} <b>${esc(t.config[p.name])}</b></span>`).join('')}
         </div>
         ${last && t.status==='SUCCEEDED' ? `<div class="task-note">ran ${esc(last.at)} by ${esc(USERS[last.by].name)}${
@@ -957,10 +985,7 @@ function taskCard(r,t,locked){
             <div style="flex:1">
               <div><b>Execution is parked here.</b> Waiting for ${esc(w.roles.join(' or '))} —
                 ${eligibleFor(w).map(u=>esc(USERS[u].name)).join(', ')}${w.dueAt?` · due ${esc(w.dueAt)}`:''}</div>
-              <div style="margin-top:2px;opacity:.85">Work item <span class="mono">${esc(w.id)}</span> · the run resumes the moment it closes ·
-                ${refusalMode(t)==='Not allowed'?'cannot be refused'
-                 :refusalMode(t)==='Fail the task'?'a refusal fails the task'
-                 :'a refusal sends the request back'}.</div>
+              <div style="margin-top:2px;opacity:.85">Work item <span class="mono">${esc(w.id)}</span> · the run resumes the moment it closes.</div>
             </div>
             ${canSign?`<button class="btn sm go" data-act="sign" data-id="${w.id}">${I.pen} ${esc(def.completeLabel||'Complete')}</button>`
                      :`<span class="pill neutral">not yours to do</span>`}
@@ -1275,16 +1300,28 @@ function dlgConfigTask(defName, taskId, at){
       <button class="iconbtn" data-act="close">${I.cross}</button>
     </div>
     <div class="dbody">
-      ${def.params.map(p=>{
-        const v = cfg[p.name]??'';
-        if(p.type==='enum') return `<div class="field">
-          <label>${esc(p.label)} ${p.required?'<span class="req">*</span>':''}</label>
-          <select data-p="${p.name}">${p.values.map(o=>
-            `<option ${o===v?'selected':''}>${esc(o)}</option>`).join('')}</select></div>`;
-        return `<div class="field">
-          <label>${esc(p.label)} ${p.required?'<span class="req">*</span>':''}</label>
-          <input type="text" data-p="${p.name}" value="${esc(v)}" placeholder="${esc(p.placeholder||'')}"></div>`;
-      }).join('')}
+      ${(()=>{
+        /* hidden params are not rendered at all; readonly ones are shown but
+           locked. Both are still set per step in the request type. */
+        const shown = def.params.filter(p=>!p.hidden);
+        if(!shown.length) return `<div class="empty">Nothing to configure — every field of this
+          task is set by the request type.</div>`;
+        return shown.map(p=>{
+          const v = cfg[p.name]??'';
+          const lock = p.readonly
+            ? `<span class="hint">Set by the request type — not editable here.</span>` : '';
+          if(p.type==='enum') return `<div class="field">
+            <label>${esc(p.label)} ${p.required?'<span class="req">*</span>':''}${
+              p.readonly?' <span class="pill neutral">fixed</span>':''}</label>
+            <select data-p="${p.name}" ${p.readonly?'disabled':''}>${p.values.map(o=>
+              `<option ${o===v?'selected':''}>${esc(o)}</option>`).join('')}</select>${lock}</div>`;
+          return `<div class="field">
+            <label>${esc(p.label)} ${p.required?'<span class="req">*</span>':''}${
+              p.readonly?' <span class="pill neutral">fixed</span>':''}</label>
+            <input type="text" data-p="${p.name}" value="${esc(v)}" ${p.readonly?'readonly':''}
+              placeholder="${esc(p.placeholder||'')}">${lock}</div>`;
+        }).join('');
+      })()}
       <div style="font-size:12px;color:var(--ink-3);border-top:1px solid var(--border);padding-top:11px">
         This form is generated from what the server declares about the task — adding a new kind of task
         needs no new screen.
@@ -1677,7 +1714,12 @@ async function completeWorkItem(id,result){
 /* What a refusal means is configured per task, because it differs per step.
    Refusing is a decision, not a breakage — so the default routes the request
    back to whoever can act on it rather than marking anything failed. */
-function refusalMode(t){ return t.config.onRefusal || 'Send back'; }
+/* Set by the administrator on the flow step; the task type supplies a fallback
+   for steps that say nothing. The requester never sees it and cannot change it. */
+function refusalMode(t){
+  const def = TASK_DEFS[t.def] || {};
+  return t.onRefusal || def.onRefusalDefault || 'Send back';
+}
 
 function rejectWorkItem(id,reason){
   const r=req();
@@ -1820,13 +1862,26 @@ document.addEventListener('click', e=>{
     }
     case 'save-task':{
       const defName=btn.dataset.def, id=btn.dataset.id;
-      const def=TASK_DEFS[defName]; const cfg={};
-      let missing=null;
+      const def=TASK_DEFS[defName];
+      const existing = id ? r.taskItems.find(x=>x.id===id) : null;
+      /* Start from what the task already has, so hidden and readonly fields —
+         which the form never rendered — survive the save instead of vanishing. */
+      const cfg = existing ? {...existing.config} : {};
       document.querySelectorAll('#modal [data-p]').forEach(el=>{
+        if(el.disabled || el.readOnly) return;
         cfg[el.dataset.p]=el.value.trim();
       });
-      def.params.forEach(p=>{ if(p.required && !cfg[p.name]) missing=missing||p.label; });
+      let missing=null, unfixable=null;
+      def.params.forEach(p=>{
+        if(!p.required || cfg[p.name]) return;
+        if(p.hidden || p.readonly) unfixable = unfixable || p.label;
+        else missing = missing || p.label;
+      });
       if(missing){ toast(`${missing} is required`); break; }
+      if(unfixable){
+        toast(`${unfixable} has no value, and it is not editable here — give it a default on the request type`);
+        break;
+      }
       if(id){
         const t=r.taskItems.find(x=>x.id===id);
         const before=taskConfigHash(r);
@@ -1940,7 +1995,36 @@ $('#resetbtn').addEventListener('click',()=>{ boot(); toast('Prototype reset'); 
 
 /* Seeding needs the request-type document, so the first paint waits for the data
    files below. boot() is called once they have all loaded. */
+/* index.html needs five sibling files. If one of them fails to load — a stale
+   cache, a rename, a file left behind when the folder was copied — the symptom
+   is otherwise a button that silently does nothing, which is a miserable thing
+   to debug. Say which file is missing instead. */
+function missingParts(){
+  return [
+    ['task-definitions.json.js', typeof window.TASK_DEFINITIONS === 'object'],
+    ['request-types.json.js',    typeof window.REQUEST_TYPES   === 'object'],
+    ['task-editor.js',           typeof viewTaskDefs  === 'function'],
+    ['request-type-editor.js',   typeof viewDefinition === 'function'],
+    ['execution-rules-editor.js',typeof defRules      === 'function'],
+  ].filter(([,ok])=>!ok).map(([f])=>f);
+}
+
 function boot(){
+  const missing = missingParts();
+  if(missing.length){
+    $('#screen').innerHTML = `
+      <div class="card" style="padding:22px;max-width:620px;margin:40px auto">
+        <h1 style="margin:0 0 10px;font-size:19px">The prototype did not load completely</h1>
+        <p style="color:var(--ink-2);font-size:13.5px;margin:0 0 12px">
+          ${missing.length === 1 ? 'This file' : 'These files'} could not be loaded:</p>
+        <div class="te-call mono">${missing.map(esc).join('<br>')}</div>
+        <p style="color:var(--ink-3);font-size:12.5px;margin:12px 0 0">
+          They must sit in the same folder as <span class="mono">index.html</span>. If they are
+          there, it is almost certainly a cached page — reload with
+          <b>Ctrl&nbsp;+&nbsp;Shift&nbsp;+&nbsp;R</b>.</p>
+      </div>`;
+    return;
+  }
   S = seed();
   (function fixSeedHashes(){
     S.requests.forEach(r=>{

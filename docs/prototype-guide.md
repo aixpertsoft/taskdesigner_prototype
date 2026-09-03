@@ -17,10 +17,10 @@ knowledge to follow it: **the notification you have to send customers before pla
 
 | # | Step | Kind | Who or what |
 | --- | --- | --- | --- |
-| 1 | Draft notice | **person** | NetOps writes the subject, the message and the recipient list |
-| 2 | Sign notice | server | `digitallySign` — a SHA-256 fingerprint of the exact wording |
-| 3 | Approve notice | **person** | An administrator approves that wording, before customers see it |
-| 4 | Send notice | server | `sendMail` — delivers it and records what the mail server answered |
+| 1 | Draft notification | **person** | NetOps writes the subject, the message and the recipient list |
+| 2 | Sign notification | server | `digitallySign` — a SHA-256 fingerprint of the exact wording |
+| 3 | Approve notification | **person** | An administrator approves that wording, before customers see it |
+| 4 | Send notification | server | `sendMail` — delivers it and records what the mail server answered |
 
 The point of steps 2 and 3 together: the fingerprint makes *what was approved* and *what was sent*
 provably the same text. That is the thing an email thread and a verbal "yes, send it" cannot give
@@ -35,7 +35,7 @@ role, so a single-user session cannot show the feature working. There are four:
 
 | | Role | In this demo |
 | --- | --- | --- |
-| MB | NetOps | raised the request; drafts the notice |
+| MB | NetOps | raised the request; drafts the notification |
 | KW | Administrator | approves the wording |
 | AS | Administrator, NetOps | can do either |
 | JN | Viewer | can do neither — useful for showing what *is* locked |
@@ -84,7 +84,7 @@ what is proposed, who has signed off, what is still objected to, and a button th
 the conditions are met.
 
 **Task cards** carry the step, its status, the settings it was configured with, and a small row of
-actions. A manual step also shows who it is waiting for and what declining it would do.
+actions. A manual step also shows who it is waiting for.
 
 **The approvals rail** shows every eligible approver and their state. The requester appears greyed
 out — you cannot approve your own request, which is `excludeRequester` on the rule, not a hard-coded
@@ -150,8 +150,11 @@ request it raised, which is where you would look for it anyway.
 
 Marking a decline as *failed* is wrong by default: it paints a red error over a considered human
 answer and offers *re-run* as the recovery, when the real recovery is to send the request back to
-whoever can change it. So each manual step carries an **If declined** setting, part of its
-configuration — which means it is hashed, which means reviewers approve it:
+whoever can change it. So each manual step carries an **If declined** setting.
+
+It lives in the step's **Runtime configuration** — *Request types → Task flow*, open a manual step.
+The requester never sees it and cannot change it. Resolution order is: the flow step, then the task
+type's own `onRefusalDefault`, then *Send back*.
 
 | Setting | What declining does |
 | --- | --- |
@@ -179,15 +182,15 @@ server can already do:
 - A **capability** is code — annotated Groovy or Java, discovered from `GET /actions`. `sendMail` is
   a capability.
 - A **task type** is configuration — which action it calls, where its inputs come from, where its
-  results are stored, and what the requester is asked to fill in. *Send notice* is a task type.
+  results are stored, and what the requester is asked to fill in. *Send notification* is a task type.
 
-Open *Send notice* and the editor shows the whole wiring:
+Open *Send notification* and the editor shows the whole wiring:
 
 ```
 sendMail from=${task.fromAddress},
          to=${request.recipients},
-         subject=${request.noticeSubject},
-         body=${request.noticeBody},
+         subject=${request.notificationSubject},
+         body=${request.notificationBody},
          signature=${request.sha256}
 ```
 
@@ -201,6 +204,13 @@ results are stored on the request — and manual steps have them too, which is h
 reaches the task that sends it. There is no direct task-to-task reference: an earlier step writes to
 the request's data, a later step reads it. At authoring time you cannot know which earlier task item
 will be in a plan, so the request is the bus.
+
+Two flags on a configuration field decide how much of it the requester gets. **fixed** (readonly)
+shows the field in the request but locks it; **hidden** keeps it off the request form entirely. Both
+kinds of field get their value from the step's defaults in the request type — the flow editor marks
+them, and warns when a required one has no default, because the requester cannot supply it. In the
+demo, *Signed on behalf of* is fixed and the sender address is hidden: organisation policy, not a
+per-request decision.
 
 The right-hand rail previews all of it live: the form the requester will see, the call that will run,
 and what it will store.
@@ -219,14 +229,27 @@ The four steps are not something the requester assembled. They are the **task fl
 type: an ordered template, instantiated when a request is created. Raise a new request and the whole
 process is already there.
 
-Each step carries:
+Each step has two halves, and the split is deliberate.
+
+**Authoring** — what the requester gets, and what they may change:
 
 | | |
 | --- | --- |
 | **required** | The requester cannot remove it. On a task card it shows as a *step* badge and the delete button is disabled. |
 | **defaults** | Pre-filled into the task item — the sender address, who signs, the due date. Still editable per request. |
-| **skipWhen** | Evaluated once, when the run reaches the step. If it matches, the step is recorded **skipped** and the run carries straight on. |
-| **requires** | Checked at run time. If unsatisfied the run parks on a **blocker** until somebody supplies what is missing. |
+
+**Runtime configuration** — how the *engine* behaves when it gets here. None of it is shown to the
+requester or editable by them, and none of it appears on the task form:
+
+| | |
+| --- | --- |
+| **If declined** | What declining does — *Send back*, *Fail the task*, or *Not allowed*. Leave it unset and the task type's own default applies. |
+| **Skip when** | Evaluated once, when the run reaches the step. If it matches, the step is recorded **skipped** and the run carries straight on. |
+| **Do not start until** | Checked at run time. If unsatisfied the run parks on a **blocker** until somebody supplies what is missing. |
+
+In the JSON these three sit together under `runtimeConfig`, which is also how the editor groups
+them. All of it is inside the approval hash even so, because what an approver approved includes how
+the step behaves — not just what it is configured with.
 
 **The flow is linear on purpose.** Steps run in order and a step may be skipped; there is no
 branching, no parallelism, no loops. That is the line between this and `de.comconsult.wf` — a
@@ -250,7 +273,7 @@ Tick **Skip the approval step** on the Data tab. Two things happen:
 ### Try the blocker
 
 Give the signing step a skip rule too, so no fingerprint is ever produced. Execute: the run reaches
-*Send notice*, finds its precondition unmet, and **parks on a blocker** — the same pause as a manual
+*Send notification*, finds its precondition unmet, and **parks on a blocker** — the same pause as a manual
 step, in the same inbox.
 
 **Why this cannot be a gate rule:** the fingerprint does not exist until the signing step has run.

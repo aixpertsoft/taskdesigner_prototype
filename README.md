@@ -14,7 +14,7 @@ nothing here ships. It exists to settle the design before implementation starts 
 
 ## Start it
 
-The prototype is a single self-contained HTML file with no build step and no dependencies.
+The prototype is plain HTML, CSS and JavaScript with no build step and no dependencies.
 
 **Simplest — just open it:**
 
@@ -22,7 +22,8 @@ The prototype is a single self-contained HTML file with no build step and no dep
 index.html
 ```
 
-Double-click it, or drag it into a browser. That is all it needs.
+Double-click it, or drag it into a browser. That is all it needs. `index.html` loads four sibling
+files from the same folder, so keep them together — but there is nothing to install or compile.
 
 **Or serve it** (only worth it if you want a shareable local URL):
 
@@ -63,14 +64,14 @@ so click freely. The reset button (top right) restores the seeded state at any t
 ### The example
 
 One worked case: **the notification a network operator must send customers before planned
-maintenance.** Four steps — a person drafts the notice, the server fingerprints the exact wording, an
+maintenance.** Four steps — a person drafts the notification, the server fingerprints the exact wording, an
 administrator approves that wording, the server sends it and records the result. The fingerprint is
 the point: it makes *what was approved* and *what was sent* provably the same text.
 
 ### Three things worth trying
 
 **1. Run it.** Open `TR-2087` and press **Execute all tasks**. It stops immediately — step 1 needs a
-person. Press **Submit draft** and write the notice. The server signs it, then parks again for an
+person. Press **Submit draft** and write the notification. The server signs it, then parks again for an
 administrator. Switch to K. Weber, whose *Awaiting my action* tab now shows 1, and press **Approve**.
 The mail sends by itself. Nobody pressed "continue" — closing the human step *is* the resume.
 
@@ -122,7 +123,12 @@ to the original requirements document.
 ## Repository layout
 
 ```
-index.html                  the prototype — one self-contained file, no build
+index.html                  requests, approvals and the execution engine
+task-definitions.json.js    the task catalogue, as data
+request-types.json.js       the request types and their task flows, as data
+task-editor.js              the Task types screen and the binding resolver
+request-type-editor.js      the Request types screen and the task flow editor
+execution-rules-editor.js   the gate rules
 docs/overview.md            feature overview and design decisions
 docs/specification.md       full technical specification
 docs/prototype-guide.md     screen-by-screen walkthrough
@@ -130,17 +136,27 @@ docs/prototype-guide.md     screen-by-screen walkthrough
 
 ## Editing the prototype
 
-`index.html` is hand-written HTML, CSS and vanilla JavaScript in one file. It is organised as:
+Hand-written HTML, CSS and vanilla JavaScript. The split is by ownership: the two `*.json.js` files
+hold **data and no logic**, each editor owns its own model and screen, and `index.html` is only a
+consumer of both catalogues.
+
+`index.html` is organised as:
 
 1. **CSS custom properties** — the full light palette on `:root`, redefined for dark under both
    `prefers-color-scheme` and `[data-theme="dark"]`.
-2. **Reference data** — `USERS`, `TASK_DEFS`, `STATUS_TRANSITIONS`, `OCCUPIED_PORTS`.
-3. **State** — `seed()` returns the whole demo state; `S` holds the live copy.
+2. **Reference data** — `USERS`, `STATUS_TRANSITIONS`.
+3. **State** — `seed()` returns the whole demo state; `S` holds the live copy; `boot()` runs it once
+   the data files have loaded.
 4. **Rule engine** — `evaluateRule()` and `evaluateGate()`. These mirror the specification and are the
    part worth porting; everything else is throwaway.
-5. **Render functions** — `viewInbox()`, `viewRequest()`, `viewDefinition()` and their panes, all
-   returning HTML strings. `render()` redraws everything on any change.
-6. **Events** — one delegated `click` handler plus `change` and `input`, dispatching on `data-act`.
+5. **Run engine** — `driveRun()`, `completeWorkItem()`, `resolveBlocker()`: the cursor, the park on a
+   manual step, and the resume when it closes.
+6. **Render functions** — `viewInbox()`, `viewRequest()` and their panes, all returning HTML strings.
+   `render()` redraws everything on any change.
+7. **Events** — one delegated `click` handler plus `change` and `input`, dispatching on `data-act`.
+   Each editor file registers its own handlers under its own attribute (`data-te`, `data-rt`,
+   `data-er`), so the files stay separable.
 
-There is no framework and no bundler on purpose: the file has to survive being emailed around and
+The files load as **classic scripts, not modules** — `type="module"` and `fetch()` of a sibling
+`.json` are both blocked over `file://`, and the prototype has to survive being emailed around and
 opened from disk.
