@@ -456,7 +456,7 @@ input[type=text]:focus,select:focus,textarea:focus{border-color:var(--accent);ou
 
   <div class="footnote">
     <b>Clickable prototype, not the product.</b> The approval and execution rules are real logic;
-    running a task is simulated. Nothing is saved.
+    signing and sending are simulated. Nothing is saved.
   </div>
 </div>
 
@@ -487,6 +487,8 @@ const I = {
   pen:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1.8 14.2h12.4"/><path d="M11.1 2.2a1.6 1.6 0 0 1 2.3 2.3l-7 7-3 .7.7-3z"/></svg>',
   doc:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3.4 1.8h6l3.2 3.2v9.2H3.4z"/><path d="M9.2 1.9V5h3.2M5.6 8.4h4.8M5.6 10.9h3.2"/></svg>',
   box:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1.8 4.6 8 1.8l6.2 2.8v6.8L8 14.2l-6.2-2.8z"/><path d="M1.8 4.6 8 7.4l6.2-2.8M8 7.4v6.8"/></svg>',
+  mail:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1.6" y="3.2" width="12.8" height="9.6" rx="1.4"/><path d="m1.9 4.4 6.1 4.3 6.1-4.3"/></svg>',
+  stamp:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.6 13.6h10.8"/><rect x="2.6" y="9.6" width="10.8" height="2.6" rx="1"/><path d="M6 9.6V7.4a2 2 0 0 1-.6-1.5V4.2a2 2 0 0 1 2-2h1.2a2 2 0 0 1 2 2v1.7A2 2 0 0 1 10 7.4v2.2"/></svg>',
 };
 
 /* ============================ reference data ============================ */
@@ -500,9 +502,6 @@ const USERS = {
 };
 const USER_ORDER = ['mb','as','kw','jn'];
 
-/* Ports already carrying a cable — a Connect onto one of these fails, like the real thing would. */
-const OCCUPIED_PORTS = ['PP-3 / Port 24'];
-
 const STATUS_TRANSITIONS = [
   {from:'OPEN',      to:'APPROVED',  roles:['Administrator']},
   {from:'OPEN',      to:'REJECTED',  roles:['Administrator']},
@@ -515,101 +514,78 @@ const STATUS_TONE = {OPEN:'blue',APPROVED:'ok',COMPLETED:'neutral',ARCHIVED:'neu
 
 /* ============================ state ============================ */
 let S;
+
+/* One worked example: the notification a network operator has to send customers
+   before planned maintenance. Four steps — a person drafts it, the server
+   fingerprints the exact wording, an administrator approves that wording, the
+   server sends it and records what the mail server answered. */
 function seed(){
   return {
     me:'mb',
     screen:'inbox',
-    inboxTab:'awaiting',
+    /* "All open" rather than "Awaiting my approval": the one seeded request belongs
+       to the starting user, so an approval-filtered inbox would open empty. */
+    inboxTab:'open',
     requestTab:'tasks',
     defSection:'workflow',
-    openRequestId:'TR-1042',
+    openRequestId:'TR-2087',
     tipOpen:false, tipSeen:false, gateOpen:false,
     seq:6,
     definition:{
-      id:'cable-patch-order', name:'Cable Patch Order', onError:'STOP',
+      id:'maintenance-notification', name:'Maintenance Notification', onError:'STOP',
       rules:[
-        {kind:'approvals', min:2, roles:['Administrator'], excludeRequester:true},
+        {kind:'approvals', min:1, roles:['Administrator'], excludeRequester:true},
         {kind:'noUnresolvedChangeRequests'},
-        {kind:'data', path:'goodToGo', op:'truthy'},
       ],
       dataParameters:[
-        {name:'goodToGo', label:'Change window confirmed', type:'boolean', defaultValue:false},
-        {name:'plannedDate', label:'Planned date', type:'text', defaultValue:'2026-09-03'},
-        {name:'changeTicket', label:'Change ticket', type:'text', defaultValue:'CHG-4471'},
-        /* Written by execution, never by the author — a task's output mapping targets these.
-           If a requester could type into them, they could forge the id of something the
-           server made. See isExecutionWritten() in task-editor.js. */
-        {name:'documentId', label:'Document id', type:'text', defaultValue:''},
-        {name:'documentFile', label:'Document file', type:'text', defaultValue:''},
-        {name:'archiveRef', label:'Archive reference', type:'text', defaultValue:''},
+        /* Filled in by the author when the request is raised. */
+        {name:'window', label:'Maintenance window', type:'text',
+         defaultValue:'12.09.2026, 22:00–23:30 CEST'},
+        {name:'affected', label:'Affected system', type:'text',
+         defaultValue:'Rack R12 — uplink switch SW-01'},
+        /* Written by the run, never by hand. Watch these fill in as it executes. */
+        {name:'noticeSubject', label:'Notice subject', type:'text', defaultValue:''},
+        {name:'noticeBody', label:'Notice text', type:'text', defaultValue:''},
+        {name:'recipients', label:'Recipients', type:'text', defaultValue:''},
+        {name:'sha256', label:'Fingerprint (SHA-256)', type:'text', defaultValue:''},
+        {name:'signedAt', label:'Signed at', type:'text', defaultValue:''},
+        {name:'approvalNote', label:'Approver comment', type:'text', defaultValue:''},
+        {name:'sendStatus', label:'Delivery status', type:'text', defaultValue:''},
+        {name:'messageId', label:'Message id', type:'text', defaultValue:''},
       ],
     },
     requests:[
       {
-        id:'TR-1042', name:'Patch rack R12 uplinks', requester:'mb', status:'OPEN',
-        createdAt:'27.08.2026 08:41', version:4,
-        data:{goodToGo:false, plannedDate:'2026-09-03', changeTicket:'CHG-4471'},
+        id:'TR-2087', name:'Notify customers — R12 uplink switch replacement',
+        requester:'mb', status:'OPEN',
+        createdAt:'03.09.2026 09:14', version:3,
+        data:{window:'12.09.2026, 22:00–23:30 CEST', affected:'Rack R12 — uplink switch SW-01',
+              noticeSubject:'', noticeBody:'', recipients:'', sha256:'', signedAt:'',
+              approvalNote:'', sendStatus:'', messageId:''},
         taskItems:[
-          {id:'ti1', def:'cablePatch', status:'NOT_RUN', attempts:0, config:{
-            operation:'Connect', sourcePort:'RCK-R12-SW01 / Gi1/0/23', targetPort:'PP-3 / Port 23', cableType:'Cat6a'}},
-          {id:'ti2', def:'cablePatch', status:'NOT_RUN', attempts:0, config:{
-            operation:'Connect', sourcePort:'RCK-R12-SW01 / Gi1/0/24', targetPort:'PP-3 / Port 24', cableType:'Cat6a'}},
-        ],
-        approvals:[],
-        changeRequests:[
-          {id:'cr1', user:'kw', text:'Please confirm the change window with the DC team before we sign this off.',
-           resolved:false, at:'27.08.2026 09:02'},
-        ],
-        comments:[
-          {id:'c1', user:'mb', text:'Two uplinks for the new R12 switch. Ports 23 and 24 on patch panel PP-3.',
-           at:'27.08.2026 08:41'},
-        ],
-        history:[
-          {at:'27.08.2026 08:41', who:'mb', text:'created this request from Cable Patch Order'},
-          {at:'27.08.2026 09:02', who:'kw', text:'requested a change'},
-        ],
-        logs:[], workItems:[], run:null,
-      },
-      {
-        id:'TR-1039', name:'Decommission switch SW-07', requester:'mb', status:'APPROVED',
-        createdAt:'26.08.2026 14:12', version:7,
-        data:{goodToGo:true, plannedDate:'2026-08-29', changeTicket:'CHG-4468'},
-        taskItems:[
-          {id:'ti3', def:'cablePatch', status:'NOT_RUN', attempts:0, config:{
-            operation:'Disconnect', sourcePort:'RCK-R07-SW07 / Gi1/0/1', targetPort:'PP-1 / Port 4', cableType:'Cat6a'}},
-          {id:'ti6', def:'genDoc', status:'NOT_RUN', attempts:0, config:{
-            template:'Decommission report'}},
-          {id:'ti7', def:'signOff', status:'NOT_RUN', attempts:0, config:{
-            document:'Decommission report for SW-07', signerRole:'Administrator', dueBy:'2026-09-05',
-            onRefusal:'Send back'}},
-          {id:'ti8', def:'archiveDoc', status:'NOT_RUN', attempts:0, config:{
-            store:'DMS / Change records 2026'}},
+          {id:'ti1', def:'draftNotice', status:'NOT_RUN', attempts:0, config:{
+            assignedRole:'NetOps', dueBy:'11.09.2026', onRefusal:'Send back'}},
+          {id:'ti2', def:'signNotice', status:'NOT_RUN', attempts:0, config:{
+            signedBy:'AixBOMS Change Management'}},
+          {id:'ti3', def:'approveNotice', status:'NOT_RUN', attempts:0, config:{
+            assignedRole:'Administrator', dueBy:'12.09.2026', onRefusal:'Send back'}},
+          {id:'ti4', def:'sendNotice', status:'NOT_RUN', attempts:0, config:{
+            fromAddress:'change@aixpertsoft.de'}},
         ],
         approvals:[
-          {id:'a1', user:'kw', decision:'APPROVED', at:'26.08.2026 15:30', hash:null},
-          {id:'a2', user:'as', decision:'APPROVED', at:'26.08.2026 15:44', hash:null},
+          {id:'a1', user:'kw', decision:'APPROVED', at:'03.09.2026 09:41', hash:null},
         ],
-        changeRequests:[], comments:[], logs:[], workItems:[], run:null,
-        history:[{at:'26.08.2026 14:12', who:'as', text:'created this request from Cable Patch Order'}],
-      },
-      {
-        id:'TR-1031', name:'Relocate patch panel PP-3', requester:'kw', status:'OPEN',
-        createdAt:'24.08.2026 11:05', version:11,
-        data:{goodToGo:true, plannedDate:'2026-08-28', changeTicket:'CHG-4455'},
-        taskItems:[
-          {id:'ti4', def:'portReserve', status:'SUCCEEDED', attempts:1, config:{
-            device:'RCK-R12-SW01', port:'Gi1/0/30', until:'2026-09-30'}},
-          {id:'ti5', def:'cablePatch', status:'FAILED', attempts:1, error:'Port PP-3 / Port 24 is already carrying cable CBL-88213.', config:{
-            operation:'Connect', sourcePort:'RCK-R12-SW01 / Gi1/0/30', targetPort:'PP-3 / Port 24', cableType:'Cat6a'}},
+        changeRequests:[],
+        comments:[
+          {id:'c1', user:'mb', text:'Uplink switch in R12 gets replaced in the September window. '
+            +'Customers on that switch have to be told a week in advance — this is the notification.',
+           at:'03.09.2026 09:14'},
         ],
-        approvals:[], changeRequests:[], comments:[], logs:[
-          {taskId:'ti4', attempt:1, at:'24.08.2026 11:40', by:'kw', outcome:'SUCCEEDED', ms:410,
-           detail:'Reserved RCK-R12-SW01 / Gi1/0/30 until 2026-09-30.'},
-          {taskId:'ti5', attempt:1, at:'24.08.2026 11:40', by:'kw', outcome:'FAILED', ms:1380,
-           detail:'BusinessLogicError: Port PP-3 / Port 24 is already carrying cable CBL-88213.\n  at de.aixpertsoft.taskrequest.actions.CablePatchAction.perform(CablePatchAction.java:118)'},
+        history:[
+          {at:'03.09.2026 09:14', who:'mb', text:'created this request from Maintenance Notification'},
+          {at:'03.09.2026 09:41', who:'kw', text:'approved this request'},
         ],
-        workItems:[], run:null,
-        history:[{at:'24.08.2026 11:05', who:'kw', text:'created this request from Cable Patch Order'}],
+        logs:[], workItems:[], run:null,
       },
     ],
   };
@@ -730,15 +706,19 @@ function tipPanel(){
   return `<div class="tip" role="dialog" aria-label="What to try">
     <h3>Try this</h3>
     <ol>
-      <li>Switch to <b>A. Schmidt</b> and <b>K. Weber</b> (top right) and approve — watch the bar below the tasks count down.</li>
-      <li>Resolve K. Weber's change request, tick <b>Change window confirmed</b> on the Data tab, then Execute.</li>
-      <li>One task fails on an occupied port. Fix its target port — and see every approval get dismissed.</li>
-      <li>Open <b>TR-1039</b> and Execute. It parks on a <b>Digital signature</b>. Switch to
-        <b>K. Weber</b>, whose <i>Awaiting my action</i> tab now shows it, and sign — the rest runs on its own.</li>
+      <li>Open the request and press <b>Execute all tasks</b>. It runs step 1 and stops — a person
+        has to draft the notice.</li>
+      <li>You are <b>M. Browett</b> (NetOps), so it is yours. Press <b>Draft</b> and write the
+        notice. The server fingerprints it, then parks again for an administrator.</li>
+      <li>Switch to <b>K. Weber</b> (top right). <i>Awaiting my action</i> shows 1. Approve the
+        wording — the mail sends by itself.</li>
+      <li>Watch the <b>Data</b> tab fill in as it goes: subject, text, fingerprint, delivery status.</li>
+      <li>To see a failure, put an address at <span class="mono">@invalid.example</span> in the
+        recipients.</li>
     </ol>
-    <div class="tipfoot">Everything runs in your browser. The approval quorum, the stale-approval check
-      and the execution gate are the real logic from the specification — the Execute button is genuinely
-      blocked until the rules pass.</div>
+    <div class="tipfoot">Everything runs in your browser. The approval rules, the frozen plan and the
+      execution gate are the real logic from the specification — Execute is genuinely blocked until
+      the rules pass. Sending mail is simulated.</div>
   </div>`;
 }
 
@@ -920,12 +900,12 @@ function taskCard(r,t,locked){
                  :refusalMode(t)==='Fail the task'?'a refusal fails the task'
                  :'a refusal sends the request back'}.</div>
             </div>
-            ${canSign?`<button class="btn sm go" data-act="sign" data-id="${w.id}">${I.pen} Sign</button>`
-                     :`<span class="pill neutral">not yours to sign</span>`}
+            ${canSign?`<button class="btn sm go" data-act="sign" data-id="${w.id}">${I.pen} ${esc(def.completeLabel||'Complete')}</button>`
+                     :`<span class="pill neutral">not yours to do</span>`}
           </div>`:''}
         ${t.status==='FAILED'? `<div class="task-err">${I.warn}<div>
             <div><b>Execution failed.</b> ${esc(t.error||'')}</div>
-            <div class="mono" style="margin-top:3px;opacity:.85">de.aixpertsoft.taskrequest.actions.CablePatchAction:118</div>
+            ${t.errorSource?`<div class="mono" style="margin-top:3px;opacity:.85">${esc(t.errorSource)}</div>`:''}
           </div></div>`:''}
       </div>
       <div class="task-acts">
@@ -1372,22 +1352,22 @@ function dlgSign(workItemId){
         <label>${esc(p.label)} ${p.required?'<span class="req">*</span>':''}</label>
         <input type="text" data-p="${p.name}" placeholder="${esc(p.placeholder||'')}"></div>`).join('')}
       <div style="font-size:12px;color:var(--ink-3);border-top:1px solid var(--border);padding-top:11px">
-        Signing closes this work item and <b>execution continues on its own</b> — the remaining tasks
-        run under the system identity, on behalf of ${esc(USERS[r.requester].name)}.
+        Closing this work item lets <b>execution continue on its own</b> — the remaining tasks run
+        under the system identity, on behalf of ${esc(USERS[r.requester].name)}.
         ${mode==='Not allowed'
-          ? `<div style="margin-top:7px;color:var(--warn)">${I.warn} This signature <b>cannot be refused</b>.
+          ? `<div style="margin-top:7px;color:var(--warn)">${I.warn} This step <b>cannot be declined</b>.
              If it should not go ahead, the requester or an administrator cancels the run.</div>`
           : mode==='Fail the task'
-          ? `Refusing marks this task <b>failed</b> and the run stops. Give the reason in the Note field.`
-          : `Refusing sends the request <b>back to ${esc(USERS[r.requester].name)}</b> as a change
-             request — nothing is marked failed. Give the reason in the Note field.`}
+          ? `Declining marks this task <b>failed</b> and the run stops. Give the reason in the last field.`
+          : `Declining sends the request <b>back to ${esc(USERS[r.requester].name)}</b> as a change
+             request — nothing is marked failed. Give the reason in the last field.`}
       </div>
     </div>
     <div class="dfoot">
       <button class="btn" data-act="close">Cancel</button>
       ${mode==='Not allowed'?'':`<button class="btn" data-act="do-refuse" data-id="${w.id}">
-        ${mode==='Fail the task'?'Refuse':'Decline &amp; send back'}</button>`}
-      <button class="btn go" data-act="do-sign" data-id="${w.id}">${I.check} Sign</button>
+        ${mode==='Fail the task'?'Decline':'Decline &amp; send back'}</button>`}
+      <button class="btn go" data-act="do-sign" data-id="${w.id}">${I.check} ${esc(def.completeLabel||'Complete')}</button>
     </div>
   </div>`);
 }
@@ -1454,13 +1434,10 @@ async function runOneTask(r,t,actor){
   const call   = renderResolvedCall(d,t,r);
 
   if(actionFails(d,inputs)){
-    t.status='FAILED';
-    t.error=`Port ${inputs.targetPort} is already carrying cable CBL-88213.`;
+    const f = failureFor(d,inputs);
+    t.status='FAILED'; t.error=f.message; t.errorSource=f.source;
     r.logs.push({taskId:t.id, attempt:t.attempts, at:stamp(), outcome:'FAILED', ms:1380, ...actor,
-      detail:`${call}\n`
-           + `BusinessLogicError: Port ${inputs.targetPort} is already carrying cable CBL-88213.\n`
-           + `  at de.aixpertsoft.taskrequest.actions.CablePatchAction.perform(CablePatchAction.java:118)\n`
-           + `  at de.aixpertsoft.action.ActionExecutor.run(ActionExecutor.java:64)`});
+      detail:`${call}\nBusinessLogicError: ${f.message}\n${f.trace}`});
     note(r,`ran ${d.label} — failed`, actor.by);
     render();
     return false;
@@ -1512,7 +1489,10 @@ async function driveRun(r){
 
     if(d.manual){
       const w = {id:'wi'+(++S.seq), runId:run.id, taskItemId:t.id,
-        title:t.config.document||d.label, roles:[t.config.signerRole||'Administrator'],
+        /* Convention: a manual task's `assignedRole` and `dueBy` config params say
+           who may close it and by when. Declaring that in manualTaskConfig instead
+           of relying on a name is the obvious next step. */
+        title:d.label, roles:[t.config.assignedRole||'Administrator'],
         dueAt:t.config.dueBy||null, state:'OPEN', createdAt:stamp(),
         context:priorOutputs(r,run.cursor), result:null};
       r.workItems.push(w);
@@ -1520,7 +1500,7 @@ async function driveRun(r){
       run.state='WAITING'; run.waitingOn=w.id;
       note(r,`execution paused — waiting for a ${d.label.toLowerCase()}`, run.resumed?'system':S.me);
       render();
-      toast(`Paused — waiting for ${t.config.signerRole||'someone'} to sign`);
+      toast(`Paused — ${d.label} is waiting for ${t.config.assignedRole||'someone'}`);
       return;
     }
 
@@ -1550,13 +1530,18 @@ async function completeWorkItem(id,result){
   const d=TASK_DEFS[t.def];
   w.state='COMPLETED'; w.result=result; w.completedBy=S.me; w.completedAt=stamp();
   t.status='SUCCEEDED'; t.error=null; t.attempts++; t.outputs=result;
+  /* A person's answers are stored on the request the same way an action's return
+     values are — that is how a drafted message reaches the task that sends it. */
+  const stored = applyOutputs(d, result, r);
   r.logs.push({taskId:t.id, attempt:t.attempts, at:stamp(), by:S.me, outcome:'SUCCEEDED', ms:0,
     detail:`${d.label} completed by ${USERS[S.me].name}.\n`
-         + Object.entries(result).filter(([,v])=>v).map(([k,v])=>`  ${k}: ${v}`).join('\n')});
-  note(r,`signed "${w.title}" — execution continues`);
+         + Object.entries(result).filter(([,v])=>v).map(([k,v])=>`  ${k}: ${v}`).join('\n')
+         + (Object.keys(stored).length?`\nstored on the request:\n`
+             +Object.entries(stored).map(([k,v])=>`  request.${k} = ${v}`).join('\n'):'')});
+  note(r,`completed "${w.title}" — execution continues`);
   r.run.cursor++; r.run.waitingOn=null;
   r.run.resumed=true; r.run.triggeredBy=S.me;
-  closeModal(); render(); toast('Signed — execution continues');
+  closeModal(); render(); toast('Done — execution continues');
   await driveRun(r);
 }
 
@@ -1581,7 +1566,7 @@ function rejectWorkItem(id,reason){
     t.status='FAILED'; t.error=`Signature refused: ${reason}`; t.attempts++;
     r.logs.push({taskId:t.id, attempt:t.attempts, at:stamp(), by:S.me, outcome:'FAILED', ms:0,
       detail:`${d.label} refused by ${USERS[S.me].name}.\n  reason: ${reason}`});
-    note(r,`refused to sign "${w.title}" — the task failed`);
+    note(r,`declined "${w.title}" — the task failed`);
     if(S.definition.onError==='STOP'){
       r.run.state='FAILED'; r.run.finishedAt=stamp();
       closeModal(); render(); toast('Signature refused — the run stopped here');
@@ -1598,7 +1583,7 @@ function rejectWorkItem(id,reason){
   r.logs.push({taskId:t.id, attempt:t.attempts, at:stamp(), by:S.me, outcome:'SENT_BACK', ms:0,
     detail:`${d.label} declined by ${USERS[S.me].name}; sent back to the requester.\n  reason: ${reason}`});
   r.changeRequests.push({id:'cr'+(++S.seq), user:S.me, resolved:false, at:stamp(),
-    text:`Declined to sign "${w.title}": ${reason}`});
+    text:`Declined "${w.title}": ${reason}`});
   r.run.state='SENT_BACK'; r.run.finishedAt=stamp();
   note(r,`declined "${w.title}" and sent the request back`);
   closeModal(); render();
@@ -1746,8 +1731,11 @@ document.addEventListener('click', e=>{
       const result={};
       document.querySelectorAll('#modal [data-p]').forEach(el=>{ result[el.dataset.p]=el.value.trim(); });
       if(act==='do-refuse'){
-        if(!result.note){ toast('Refusing needs a reason — use the Note field'); break; }
-        rejectWorkItem(w.id, result.note); break;
+        /* The reason lives in the last result field, whatever the definition called it. */
+        const last = def.resultParams[def.resultParams.length-1];
+        const reason = last ? String(result[last.name]||'').trim() : '';
+        if(!reason){ toast(`Declining needs a reason — use the ${last?last.label:'last'} field`); break; }
+        rejectWorkItem(w.id, reason); break;
       }
       let missing=null;
       def.resultParams.forEach(p=>{ if(p.required && !result[p.name]) missing=missing||p.label; });

@@ -55,32 +55,36 @@ so click freely. The reset button (top right) restores the seeded state at any t
 
 | User | Roles | Can approve? |
 | --- | --- | --- |
-| **M. Browett** | NetOps | No — opened TR-1042, and you cannot approve your own request |
+| **M. Browett** | NetOps | No — opened TR-2087, and you cannot approve your own request |
 | **A. Schmidt** | Administrator, NetOps | Yes |
 | **K. Weber** | Administrator | Yes |
 | **J. Novak** | Viewer | No — holds no approving role |
 
+### The example
+
+One worked case: **the notification a network operator must send customers before planned
+maintenance.** Four steps — a person drafts the notice, the server fingerprints the exact wording, an
+administrator approves that wording, the server sends it and records the result. The fingerprint is
+the point: it makes *what was approved* and *what was sent* provably the same text.
+
 ### Three things worth trying
 
-**1. Watch the gate unlock.** Open `TR-1042`. The box below the tasks lists every rule and why it is
-failing. Switch to A. Schmidt and approve, then K. Weber and approve. Resolve K. Weber's change
-request in the right rail, then tick *Change window confirmed* on the **Data** tab. The gate turns
-green and Execute unlocks.
+**1. Run it.** Open `TR-2087` and press **Execute all tasks**. It stops immediately — step 1 needs a
+person. Press **Submit draft** and write the notice. The server signs it, then parks again for an
+administrator. Switch to K. Weber, whose *Awaiting my action* tab now shows 1, and press **Approve**.
+The mail sends by itself. Nobody pressed "continue" — closing the human step *is* the resume.
 
-**2. Watch an approval get dismissed.** With the gate green, edit any task's configuration
-(**Configure** on a task card) and change a value. Every approval given so far is dismissed, the rail
-marks them, and the gate closes again. This is the approve-then-edit-then-execute hole being closed —
-the same thing GitHub does when it dismisses stale reviews.
+**2. Watch the data fill in.** The **Data** tab has two fields you own and several marked *set by
+execution*. The subject, text, fingerprint and delivery status are written by the run, through the
+task definitions' output mappings, and are read-only by design.
 
-**3. Watch a task fail, then fix it.** Execute the tasks. The second one targets `PP-3 / Port 24`,
-which is already carrying a cable, so it fails with a business-logic error — the failure badge and the
-execution log are both real. Change its target port to something free and re-run. Note that the edit
-dismisses your approvals, so you have to get them again first. That loop exercises the whole
-integrity model.
+**3. Watch a task fail.** Put an address at `@invalid.example` in the recipients at step 3. The send
+fails with `550 5.1.1 … recipient address rejected`, the run stops there, and everything before it
+keeps its results — the failure badge and the execution log are both real.
 
-Also worth a look: **Request types** in the top nav. Change the required approval count from 2 to 1,
-or turn off *exclude the requester*, and the gate on TR-1042 responds immediately — the point being
-that this is configuration, not code.
+Also worth a look: **Task types** in the top nav, where the four steps are authored — which server
+action each one calls, and how values are wired between them. And **Request types**, where changing
+the required approval count makes the gate respond immediately: configuration, not code.
 
 ### What is real and what is not
 
@@ -90,8 +94,8 @@ and resumes when someone signs it. These are the logic described in
 [the specification](docs/specification.md), so the Execute button is genuinely blocked rather than
 merely drawn greyed out.
 
-**Simulated** — task execution. No server is contacted; a task "runs" on a timer and its outcome is
-decided by a hard-coded list of occupied ports.
+**Simulated** — task execution. No server is contacted; a task "runs" on a timer, the fingerprint is a
+stand-in hash rather than SHA-256, and no mail leaves your browser.
 
 **Not present** — persistence, authentication, notifications, and timeouts. A run pauses on a manual
 step and resumes by itself, but everything happens inside one browser tab.

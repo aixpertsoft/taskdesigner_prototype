@@ -43,7 +43,7 @@ graph, which task types may be added, the data fields to collect, and the execut
 **A `TaskRequest`** is one instance. It snapshots the definition's data fields, collects task items,
 approvals, change requests and comments, and tracks its own status.
 
-**A `TaskItem`** is one unit of work — a cable patch, a port reservation — configured through a form
+**A `TaskItem`** is one unit of work — sign a document, send a notification — configured through a form
 generated from what the server declares about that task type.
 
 Adding a new kind of task means writing a server-side executor and nothing else. No new screen, no
@@ -141,7 +141,8 @@ timeouts, binding expressions between one task's output and another's input, man
 from the existing engine. Role-based assignment and a resumable run *are* in scope — manual tasks
 require both.
 
-Note that the prototype shows Cable Patch tasks because that communicates the feature; the POC ships
-HelloWorld. Nobody should read the port-level detail in the mockup as committed scope.
+Note that the prototype walks through a maintenance-notification workflow because that communicates
+the feature to a non-technical audience; the POC ships `HelloWorld`. Nobody should read the mail
+detail in the mockup as committed scope.
 
 Full detail in [the specification](specification.md).

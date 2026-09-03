@@ -20,26 +20,27 @@
 /* Stands in for GET /actions — the annotated Groovy/Java the server can already
    run. Read-only here: you pick one, you do not author one. */
 const SERVER_ACTIONS = {
-  cablePatch:{
-    name:'cablePatch', label:'Cable patch',
-    description:'de.aixpertsoft.taskrequest.actions.CablePatchAction',
+  digitallySign:{
+    name:'digitallySign', label:'Digitally sign',
+    description:'de.aixpertsoft.taskrequest.actions.DigitallySignAction',
     parameters:[
-      {name:'operation', type:'enum', values:['Connect','Disconnect'], required:true},
-      {name:'sourcePort',type:'string', required:true},
-      {name:'targetPort',type:'string', required:true},
-      {name:'cableType', type:'string'},
+      {name:'text',  type:'string', required:true},
+      {name:'signer',type:'string'},
     ],
-    outParameters:[{name:'cableId', type:'string'}],
+    outParameters:[{name:'sha256',type:'string'},{name:'signedAt',type:'string'}],
   },
-  reservePort:{
-    name:'reservePort', label:'Reserve port',
-    description:'de.aixpertsoft.taskrequest.actions.ReservePortAction',
+  sendMail:{
+    name:'sendMail', label:'Send mail',
+    description:'de.aixpertsoft.taskrequest.actions.SendMailAction',
     parameters:[
-      {name:'device',type:'string',required:true},
-      {name:'port',  type:'string',required:true},
-      {name:'until', type:'string'},
+      {name:'from',     type:'string', required:true},
+      {name:'to',       type:'string', required:true},
+      {name:'subject',  type:'string', required:true},
+      {name:'body',     type:'string', required:true},
+      {name:'signature',type:'string'},
     ],
-    outParameters:[{name:'reservationId',type:'string'}],
+    outParameters:[{name:'status',type:'string'},{name:'messageId',type:'string'},
+                   {name:'accepted',type:'string'}],
   },
   printMessage:{
     name:'printMessage', label:'Print message',
@@ -50,37 +51,13 @@ const SERVER_ACTIONS = {
     ],
     outParameters:[{name:'printedAt',type:'string'}],
   },
-  generateDocument:{
-    name:'generateDocument', label:'Generate document',
-    description:'de.aixpertsoft.taskrequest.actions.GenerateDocumentAction',
-    parameters:[
-      {name:'template',type:'string',required:true},
-      {name:'subject', type:'string'},
-    ],
-    outParameters:[{name:'documentId',type:'string'},{name:'fileName',type:'string'},
-                   {name:'sha256',type:'string'}],
-  },
-  archiveDocument:{
-    name:'archiveDocument', label:'Archive document',
-    description:'de.aixpertsoft.taskrequest.actions.ArchiveDocumentAction',
-    parameters:[
-      {name:'documentId',type:'string',required:true},
-      {name:'store',     type:'string',required:true},
-    ],
-    outParameters:[{name:'archiveRef',type:'string'}],
-  },
-  createComponent:{
-    name:'createComponent', label:'Create component',
-    description:'de.aixpertsoft.taskrequest.actions.CreateComponentAction',
-    parameters:[
-      {name:'type',type:'string',required:true},
-      {name:'name',type:'string',required:true},
-    ],
-    outParameters:[{name:'componentId',type:'string'}],
-  },
 };
 
-const ICON_KEYS = ['cable','port','hello','doc','box','pen','gear','log'];
+const ICON_KEYS = ['doc','pen','stamp','mail','box','log','gear','hello'];
+
+/* A recipient the mail server cannot deliver to. Type one of these into the
+   draft step's Recipients field to see what a failed task looks like. */
+const UNDELIVERABLE = /@(invalid|ghost)\./i;
 
 /* ============================ the catalogue ============================ */
 /* TASK_DOC is the JSON document — the thing you would POST to the server.
@@ -101,8 +78,14 @@ function flatten(raw){
     name:raw.name||'', label:raw.label||'', icon:raw.icon||'gear',
     description:raw.description||'', kind:raw.kind||'SERVER',
     params: copy(raw.params),
-    action: s.action||'', inputs: copy(s.inputs), outputs: copy(s.outputs),
+    action: s.action||'',
+    inputs: copy(s.inputs),
+    /* Both kinds produce something worth keeping: an action's return values, or a
+       person's answers. One `outputs` list serves both. */
+    outputs: copy(raw.kind==='MANUAL' ? m.outputs : s.outputs),
     resultParams: copy(m.resultParams),
+    /* The verb on the button that closes it — "Submit draft", "Approve", "Sign". */
+    completeLabel: m.completeLabel || 'Complete',
     onRefusalDefault: m.onRefusalDefault || 'Send back',
   };
 }
@@ -112,12 +95,18 @@ function nest(d){
   if(d.kind==='SERVER'){
     out.serverActionConfig = {action:d.action||'', inputs:d.inputs||[], outputs:d.outputs||[]};
   }else{
-    out.manualTaskConfig = {resultParams:d.resultParams||[],
+    out.manualTaskConfig = {completeLabel:d.completeLabel||'Complete',
+                            resultParams:d.resultParams||[], outputs:d.outputs||[],
                             onRefusalDefault:d.onRefusalDefault||'Send back'};
   }
   return out;
 }
 function serverConfig(raw){ return raw.serverActionConfig || {}; }
+function outputsOf(raw){
+  return (raw.kind==='MANUAL'
+    ? (raw.manualTaskConfig||{}).outputs
+    : (raw.serverActionConfig||{}).outputs) || [];
+}
 
 function materialise(d){
   const f = flatten(d);
@@ -180,16 +169,16 @@ function renderResolvedCall(def, t, r){
 /* Simulated POST /actions/run. Real outParameters, fake work. */
 function runServerAction(def, inputs, r){
   switch(def.action){
-    case 'generateDocument':{
-      const file = `${String(inputs.template||'document').toLowerCase().replace(/\s+/g,'-')}-${r.id}.pdf`;
-      return {documentId:'DOC-'+r.id.replace(/\D/g,''), fileName:file, sha256:fnv(file)};
+    case 'digitallySign':
+      return {sha256: fnv(String(inputs.text||'')) + fnv(String(inputs.text||'').split('').reverse().join('')),
+              signedAt: stamp()};
+    case 'sendMail':{
+      const to = String(inputs.to||'').split(',').map(s=>s.trim()).filter(Boolean);
+      return {status:'DELIVERED', messageId:'<'+fnv(String(inputs.subject||''))+'@aixpertsoft.de>',
+              accepted:String(to.length)};
     }
-    case 'archiveDocument': return {archiveRef:`${inputs.store||'—'} / ${inputs.documentId||'—'}`};
-    case 'printMessage':    return {printedAt:stamp()};
-    case 'cablePatch':      return {cableId:'CBL-'+fnv(String(inputs.targetPort||'')).slice(0,5)};
-    case 'reservePort':     return {reservationId:'RES-'+fnv(String(inputs.port||'')).slice(0,5)};
-    case 'createComponent': return {componentId:'CMP-'+fnv(String(inputs.name||'')).slice(0,5)};
-    default:                return {};
+    case 'printMessage': return {printedAt:stamp()};
+    default:             return {};
   }
 }
 /* Output mappings are how a task stores something on the request — the id of a
@@ -206,10 +195,18 @@ function applyOutputs(def, outs, r){
   });
   return written;
 }
+/* The one simulated failure: the mail server rejects an undeliverable recipient. */
 function actionFails(def, inputs){
-  return def.action==='cablePatch'
-    && inputs.operation==='Connect'
-    && OCCUPIED_PORTS.includes(String(inputs.targetPort||'').trim());
+  return def.action==='sendMail' && UNDELIVERABLE.test(String(inputs.to||''));
+}
+function failureFor(def, inputs){
+  const bad = String(inputs.to||'').split(',').map(s=>s.trim()).find(a=>UNDELIVERABLE.test(a));
+  return {
+    message:`550 5.1.1 <${bad}>: recipient address rejected — domain not found.`,
+    trace:`  at de.aixpertsoft.taskrequest.actions.SendMailAction.perform(SendMailAction.java:96)\n`
+        + `  at de.aixpertsoft.action.ActionExecutor.run(ActionExecutor.java:64)`,
+    source:'de.aixpertsoft.taskrequest.actions.SendMailAction:96',
+  };
 }
 function taskSummary(def, cfg){
   const vals = (def.params||[]).filter(p=>cfg[p.name]).slice(0,3).map(p=>cfg[p.name]);
@@ -218,7 +215,7 @@ function taskSummary(def, cfg){
 /* Data parameters an execution writes are server-owned: authors must not type
    into them, or a requester could forge the id of something the server made. */
 function isExecutionWritten(path){
-  return (TASK_DOC.definitions||[]).some(d=>(serverConfig(d).outputs||[]).some(m=>
+  return (TASK_DOC.definitions||[]).some(d=>outputsOf(d).some(m=>
     m.target && m.target.kind==='REQUEST_DATA' && m.target.path===path));
 }
 
@@ -270,7 +267,15 @@ function startEdit(name){
 }
 /* Keep the input/output rows in step with the chosen action's declared contract. */
 function syncBindings(d){
-  if(d.kind!=='SERVER'){ d.inputs=[]; d.outputs=[]; return; }
+  if(d.kind==='MANUAL'){
+    /* A manual task's "outputs" are its result fields — one row each. */
+    d.inputs=[];
+    d.outputs = (d.resultParams||[]).map(p=>{
+      const prev = (d.outputs||[]).find(x=>x.source===p.name);
+      return prev || {source:p.name, target:{kind:'NONE'}};
+    });
+    return;
+  }
   const a = SERVER_ACTIONS[d.action];
   if(!a){ d.inputs=[]; d.outputs=[]; return; }
   d.inputs = a.parameters.map(p=>{
@@ -512,7 +517,7 @@ function teEditor(){
         <div class="panel-head"><h3>Output mappings</h3></div>
         <div class="panel-body">
           <span class="hint">Where results are stored on the request, so a later task or a rule can
-            read them — the id of a created component, for instance.</span>
+            read them — the delivery status, for instance.</span>
           ${action.outParameters.map((o,i)=>{
             const m = d.outputs[i]||{source:o.name,target:{kind:'NONE'}};
             const tgt = m.target||{kind:'NONE'};
@@ -533,17 +538,44 @@ function teEditor(){
         <div class="panel-head"><h3>Result fields</h3>
           <span class="pill neutral">${(d.resultParams||[]).length}</span></div>
         <div class="panel-body">
-          <span class="hint">What the person supplies when they close it — the signature reference,
-            a note. The completion form is generated from these.</span>
+          <span class="hint">What the person supplies when they close it — a subject and a message,
+            or just a comment. The completion form is generated from these.</span>
           ${fieldRows(d.resultParams||[],'resultParams')}
           <button class="btn sm" data-te="add-field" data-f="resultParams">${I.plus} Add field</button>
           <div class="field" style="margin-top:4px">
-            <label>Default if refused</label>
+            <label>Button that closes it</label>
+            <input type="text" data-te-d="completeLabel" value="${esc(d.completeLabel||'Complete')}"
+              placeholder="Approve">
+            <span class="hint">The verb the person sees — "Approve", "Submit draft", "Sign".</span>
+          </div>
+          <div class="field">
+            <label>Default if declined</label>
             <select data-te-d="onRefusalDefault">
               ${['Send back','Fail the task','Not allowed'].map(v=>
                 `<option ${((d.onRefusalDefault)||'Send back')===v?'selected':''}>${v}</option>`).join('')}
             </select>
           </div>
+        </div>
+      </section>`:''}
+
+      ${d.kind==='MANUAL'&&(d.resultParams||[]).length?`
+      <section class="panel">
+        <div class="panel-head"><h3>Output mappings</h3></div>
+        <div class="panel-body">
+          <span class="hint">Where the person's answers are stored on the request, so a later task
+            can use them. This is how a drafted message reaches the task that sends it.</span>
+          ${(d.resultParams||[]).map((p,i)=>{
+            const m = d.outputs[i]||{source:p.name,target:{kind:'NONE'}};
+            const tgt = m.target||{kind:'NONE'};
+            return `<div class="te-map">
+              <span class="te-target mono">${esc(p.name||'—')}</span>
+              <span class="te-arrow">→</span>
+              <select data-te-out="${i}" style="flex:1">
+                <option value="" ${tgt.kind!=='REQUEST_DATA'?'selected':''}>don't store</option>
+                ${dataParams.map(q=>`<option value="${esc(q.name)}" ${tgt.path===q.name?'selected':''}>request.${esc(q.name)}</option>`).join('')}
+              </select>
+            </div>`;
+          }).join('')}
         </div>
       </section>`:''}
     </div>
@@ -682,7 +714,7 @@ document.addEventListener('click', e=>{
       const f = btn.dataset.f;
       if(!d[f]) d[f]=[];
       d[f].push({name:'', label:'', type:'text', required:false});
-      render(); break;
+      syncBindings(d); render(); break;
     }
     case 'del-field':{
       d[btn.dataset.f].splice(+btn.dataset.i,1);
@@ -707,7 +739,8 @@ document.addEventListener('change', e=>{
     if(k==='required') p.required = el.checked;
     else if(k==='values') p.values = el.value.split(',').map(s=>s.trim()).filter(Boolean);
     else p[k] = el.value;
-    if(k==='type' || k==='name'){ render(); return; }
+    /* A renamed result field is a renamed output row — keep them in step. */
+    if(k==='type' || k==='name'){ syncBindings(d); render(); return; }
     paintPreview(); return;
   }
   if(el.dataset.teMap!==undefined){
