@@ -558,6 +558,8 @@ function instantiateFlow(definition, seqBase){
        step. It sits on the item rather than in its config, so it never appears
        in the task form the requester fills in. */
     onRefusal:(step.runtimeConfig||{}).onRefusal || null,
+    assignedRoles:copy((step.runtimeConfig||{}).assignedRoles||[]),
+    dueBy:(step.runtimeConfig||{}).dueBy || null,
     skipWhen:copy((step.runtimeConfig||{}).skipWhen||[]),
     requires:copy((step.runtimeConfig||{}).requires||[]),
   }));
@@ -649,7 +651,8 @@ function taskConfigHash(r){
      carries it, and what the approver approved includes whether this step may be
      declined at all. */
   const items = (r.taskItems||[]).map(t=>
-    ({d:t.def, c:t.config, s:t.skipWhen, q:t.requires, f:t.onRefusal}));
+    ({d:t.def, c:t.config, s:t.skipWhen, q:t.requires, f:t.onRefusal,
+      a:t.assignedRoles, u:t.dueBy}));
   return fnv(JSON.stringify({tasks:items, data:authorData(r)}));
 }
 
@@ -1628,19 +1631,21 @@ async function driveRun(r){
     }
 
     if(d.manual){
+      /* Who may act comes from the step's runtimeConfig, declared by the
+         administrator — not from a config field the requester could edit. An
+         empty list falls back to Administrator, so no step can park where
+         nobody may ever close it. */
+      const who = (t.assignedRoles&&t.assignedRoles.length) ? t.assignedRoles : ['Administrator'];
       const w = {id:'wi'+(++S.seq), runId:run.id, taskItemId:t.id, kind:'TASK',
-        /* Convention: a manual task's `assignedRole` and `dueBy` config params say
-           who may close it and by when. Declaring that in manualTaskConfig instead
-           of relying on a name is the obvious next step. */
-        title:d.label, roles:[t.config.assignedRole||'Administrator'],
-        dueAt:t.config.dueBy||null, state:'OPEN', createdAt:stamp(),
+        title:d.label, roles:who,
+        dueAt:t.dueBy||null, state:'OPEN', createdAt:stamp(),
         context:priorOutputs(r,run.cursor), result:null};
       r.workItems.push(w);
       t.status='WAITING';
       run.state='WAITING'; run.waitingOn=w.id;
       note(r,`execution paused — waiting for a ${d.label.toLowerCase()}`, run.resumed?'system':S.me);
       render();
-      toast(`Paused — ${d.label} is waiting for ${t.config.assignedRole||'someone'}`);
+      toast(`Paused — ${d.label} is waiting for ${who.join(' or ')}`);
       return;
     }
 

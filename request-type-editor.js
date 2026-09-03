@@ -99,8 +99,13 @@ function viewDefinition(){
 /* The runtime half of a step: how the engine behaves when it gets here. Created
    lazily so a document written before the block existed still opens. */
 function rc(step){
-  if(!step.runtimeConfig) step.runtimeConfig = {onRefusal:null, skipWhen:[], requires:[]};
-  return step.runtimeConfig;
+  const c = step.runtimeConfig || (step.runtimeConfig = {});
+  if(!('onRefusal' in c)) c.onRefusal = null;
+  if(!c.assignedRoles)    c.assignedRoles = [];
+  if(!('dueBy' in c))     c.dueBy = null;
+  if(!c.skipWhen)         c.skipWhen = [];
+  if(!c.requires)         c.requires = [];
+  return c;
 }
 
 /* ---------------------------------------------------------------- task flow */
@@ -125,7 +130,10 @@ function flowStep(step,i){
           ${d.manual && refusalMode({def:step.taskDefinition, onRefusal:rc(step).onRefusal})==='Not allowed'
             ? `<span class="pill bad">cannot be declined</span>`:''}
         </div>
-        <div class="flowsub">${esc(defaultsSummary(d,step))}</div>
+        <div class="flowsub">${esc(
+          (d.manual ? `carried out by ${(rc(step).assignedRoles.length?rc(step).assignedRoles:['Administrator']).join(' or ')}`
+                     + (rc(step).dueBy?` · due ${rc(step).dueBy}`:'') + ' · ' : '')
+          + defaultsSummary(d,step))}</div>
       </div>
       <div class="flowacts">
         <button class="btn sm ico" data-rt="up" data-i="${i}" ${i===0?'disabled':''}
@@ -178,6 +186,23 @@ function flowStep(step,i){
         an approver approved includes how the step behaves.</span>
 
       ${d.manual?`
+      <h5>Who may carry it out</h5>
+      <div class="rolepick">
+        ${knownRoles().map(role=>`
+          <label class="rolechip ${rc(step).assignedRoles.includes(role)?'on':''}">
+            <input type="checkbox" data-rt="wrole" data-i="${i}" data-role="${esc(role)}"
+              ${rc(step).assignedRoles.includes(role)?'checked':''}>
+            ${esc(role)}
+          </label>`).join('')}
+      </div>
+      ${rc(step).assignedRoles.length?'':`<span class="hint" style="color:var(--warn)">
+        Nobody selected — the engine falls back to Administrator.</span>`}
+      <div class="field" style="margin-top:8px;max-width:220px">
+        <label>Due by</label>
+        <input type="text" data-rt="dueby" data-i="${i}" value="${esc(rc(step).dueBy||'')}"
+          placeholder="12.09.2026">
+      </div>
+
       <h5>If the person declines</h5>
       <select data-rt="onrefusal" data-i="${i}" style="width:auto">
         <option value="" ${!rc(step).onRefusal?'selected':''}>Use the task type's default (${esc(d.onRefusalDefault||'Send back')})</option>
@@ -424,6 +449,13 @@ document.addEventListener('change', e=>{
   if(rt==='required'){ flow[i].required = el.checked; render(); return; }
   if(rt==='cfg'){ flow[i].defaults[el.dataset.k] = el.value; render(); return; }
   if(rt==='onrefusal'){ rc(flow[i]).onRefusal = el.value || null; render(); return; }
+  if(rt==='wrole'){
+    const roles = rc(flow[i]).assignedRoles, role = el.dataset.role;
+    if(el.checked){ if(!roles.includes(role)) roles.push(role); }
+    else rc(flow[i]).assignedRoles = roles.filter(x=>x!==role);
+    render(); return;
+  }
+  if(rt==='dueby'){ rc(flow[i]).dueBy = el.value.trim() || null; render(); return; }
   if(rt==='rule-path'){ rc(flow[i])[el.dataset.w][+el.dataset.j].path = el.value; render(); return; }
   if(rt==='rule-op'){ rc(flow[i])[el.dataset.w][+el.dataset.j].op = el.value; render(); return; }
 });

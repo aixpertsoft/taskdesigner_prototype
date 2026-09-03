@@ -52,11 +52,7 @@ window.TASK_DEFINITIONS = {
       "icon": "doc",
       "description": "A person writes the customer notification: subject, body and who receives it.",
       "kind": "MANUAL",
-      "params": [
-        {"name": "assignedRole", "label": "Who drafts it", "type": "enum", "required": true,
-         "values": ["NetOps", "Administrator"]},
-        {"name": "dueBy", "label": "Due by", "type": "text", "placeholder": "11.09.2026"}
-      ],
+      "params": [],
       "manualTaskConfig": {
         "completeLabel": "Submit draft",
         "resultParams": [
@@ -103,11 +99,7 @@ window.TASK_DEFINITIONS = {
       "icon": "pen",
       "description": "An administrator approves the signed wording before it reaches customers.",
       "kind": "MANUAL",
-      "params": [
-        {"name": "assignedRole", "label": "Who approves", "type": "enum", "required": true,
-         "values": ["Administrator", "NetOps"]},
-        {"name": "dueBy", "label": "Due by", "type": "text", "placeholder": "12.09.2026"}
-      ],
+      "params": [],
       "manualTaskConfig": {
         "completeLabel": "Approve",
         "resultParams": [

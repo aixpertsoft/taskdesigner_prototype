@@ -29,6 +29,9 @@
        runtimeConfig — how the ENGINE behaves at this step. None of it is shown
        to the requester or editable by them; all of it is inside the approval
        hash, because what an approver approved includes how the step behaves.
+         assignedRoles   who may carry out a manual step — anyone holding one of
+                         these roles. Empty falls back to Administrator.
+         dueBy           when the step is due, shown on the work item
          onRefusal       what declining does: "Send back" (default), "Fail the
                          task", or "Not allowed". null falls back to the task
                          type's own onRefusalDefault.
@@ -98,8 +101,10 @@ window.REQUEST_TYPES = {
           "stepId": "s1",
           "taskDefinition": "draftNotification",
           "required": true,
-          "defaults": {"assignedRole": "NetOps", "dueBy": "11.09.2026"},
+          "defaults": {},
           "runtimeConfig": {
+            "assignedRoles": ["NetOps"],
+            "dueBy": "11.09.2026",
             "onRefusal": "Send back",
             "skipWhen": [],
             "requires": []
@@ -111,6 +116,8 @@ window.REQUEST_TYPES = {
           "required": true,
           "defaults": {"signedBy": "AixBOMS Change Management"},
           "runtimeConfig": {
+            "assignedRoles": [],
+            "dueBy": null,
             "onRefusal": null,
             "skipWhen": [],
             "requires": []
@@ -120,8 +127,10 @@ window.REQUEST_TYPES = {
           "stepId": "s3",
           "taskDefinition": "approveNotification",
           "required": false,
-          "defaults": {"assignedRole": "Administrator", "dueBy": "12.09.2026"},
+          "defaults": {},
           "runtimeConfig": {
+            "assignedRoles": ["Administrator"],
+            "dueBy": "12.09.2026",
             "onRefusal": "Send back",
             "skipWhen": [{"kind": "data", "path": "skipApproval", "op": "truthy"}],
             "requires": []
@@ -133,6 +142,8 @@ window.REQUEST_TYPES = {
           "required": true,
           "defaults": {"fromAddress": "change@aixpertsoft.de"},
           "runtimeConfig": {
+            "assignedRoles": [],
+            "dueBy": null,
             "onRefusal": null,
             "skipWhen": [],
             "requires": [{"kind": "data", "path": "sha256", "op": "truthy"}]

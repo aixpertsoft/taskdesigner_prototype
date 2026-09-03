@@ -243,9 +243,16 @@ requester or editable by them, and none of it appears on the task form:
 
 | | |
 | --- | --- |
+| **Who may carry it out** | The candidate roles for a manual step — anyone holding one of them sees it in *Awaiting my action* and may close it. Empty falls back to Administrator, so no step can park where nobody may ever act. |
+| **Due by** | Shown on the work item while the step waits. |
 | **If declined** | What declining does — *Send back*, *Fail the task*, or *Not allowed*. Leave it unset and the task type's own default applies. |
 | **Skip when** | Evaluated once, when the run reaches the step. If it matches, the step is recorded **skipped** and the run carries straight on. |
 | **Do not start until** | Checked at run time. If unsatisfied the run parks on a **blocker** until somebody supplies what is missing. |
+
+Assignment used to be an ordinary form field the engine recognised by name — which meant the
+requester could reassign the approval step to a role they hold. Now it is declared configuration:
+the requester never sees it, and because it is inside the approval hash, reassigning a step
+dismisses the approvals given for the old assignment.
 
 In the JSON these three sit together under `runtimeConfig`, which is also how the editor groups
 them. All of it is inside the approval hash even so, because what an approver approved includes how
