@@ -247,6 +247,15 @@ input[type=text]:focus,select:focus,textarea:focus{border-color:var(--accent);ou
   border-radius:var(--r);font-size:12.5px;color:var(--warn);display:flex;gap:9px;align-items:center;flex-wrap:wrap}
 .task-wait .wi{flex:none;display:grid;place-items:center}
 .task-wait .mono{font-size:11.5px}
+/* what a person entered, once the step is closed */
+.task-sub{margin-top:8px;padding:6px 9px;background:var(--surface-2);border:1px solid var(--border);
+  border-radius:var(--r);font-size:12.5px;color:var(--ink-2);display:flex;gap:8px;align-items:center}
+.task-sub .si{flex:none;display:grid;place-items:center;color:var(--ink-3)}
+.task-sub>div{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.subhead{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12.5px;color:var(--ink-3)}
+.subhead b{color:var(--ink)}
+input[readonly],textarea[readonly]{background:var(--surface-2);color:var(--ink-2);cursor:default}
+textarea[readonly]{resize:vertical;line-height:1.5}
 .task-acts{display:flex;gap:1px;flex:none;margin-left:6px}
 .task-acts .ico{
   width:28px;height:28px;padding:0;justify-content:center;border-color:transparent;
@@ -502,6 +511,7 @@ const I = {
   box:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1.8 4.6 8 1.8l6.2 2.8v6.8L8 14.2l-6.2-2.8z"/><path d="M1.8 4.6 8 7.4l6.2-2.8M8 7.4v6.8"/></svg>',
   mail:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1.6" y="3.2" width="12.8" height="9.6" rx="1.4"/><path d="m1.9 4.4 6.1 4.3 6.1-4.3"/></svg>',
   stamp:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.6 13.6h10.8"/><rect x="2.6" y="9.6" width="10.8" height="2.6" rx="1"/><path d="M6 9.6V7.4a2 2 0 0 1-.6-1.5V4.2a2 2 0 0 1 2-2h1.2a2 2 0 0 1 2 2v1.7A2 2 0 0 1 10 7.4v2.2"/></svg>',
+  eye:'<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1.2 8S3.8 3.6 8 3.6 14.8 8 14.8 8 12.2 12.4 8 12.4 1.2 8 1.2 8Z"/><circle cx="8" cy="8" r="1.9"/></svg>',
 };
 
 /* ============================ reference data ============================ */
@@ -919,6 +929,7 @@ function taskCard(r,t,locked){
   const blocker = open && open.kind==='BLOCKER' ? open : null;
   const canSign = w && w.roles.some(ro=>hasRole(S.me,ro));
   const canClear = blocker && blocker.roles.some(ro=>hasRole(S.me,ro));
+  const submitted = lastSubmission(r,t.id);
   return `<article class="task ${t.status==='FAILED'?'failed':''} ${t.status==='WAITING'?'waiting':''}">
     <div class="task-top">
       <div class="task-ico">${def.icon}</div>
@@ -936,6 +947,11 @@ function taskCard(r,t,locked){
         </div>
         ${last && t.status==='SUCCEEDED' ? `<div class="task-note">ran ${esc(last.at)} by ${esc(USERS[last.by].name)}${
           last.onBehalfOf?` on behalf of ${esc(USERS[last.onBehalfOf].name)}`:''}</div>`:''}
+        ${submitted?`<div class="task-sub">
+            <span class="si">${I.eye}</span>
+            <div style="flex:1">${esc(submittedPreview(def,submitted))}</div>
+            <button class="btn sm ghost" data-act="show-submission" data-id="${t.id}">View</button>
+          </div>`:''}
         ${w ? `<div class="task-wait">
             <span class="wi">${I.pause}</span>
             <div style="flex:1">
@@ -1312,6 +1328,74 @@ function dlgLog(taskId){
     <div class="dfoot"><button class="btn" data-act="close">Close</button></div>
   </div>`);
 }
+/* What a person actually typed, after the fact.
+
+   The same form, read-only. A work item keeps everything it collected; this just
+   renders it back instead of leaving it buried in the log text. Only the most
+   recent close is shown — earlier attempts stay on the record in the execution
+   log and, for a decline, as the change request it raised. */
+function lastSubmission(r,taskItemId){
+  const closed = (r.workItems||[]).filter(w=>w.taskItemId===taskItemId && w.state!=='OPEN');
+  return closed.length ? closed[closed.length-1] : null;
+}
+/* One line of what they typed, for the card — the first value that has any
+   length, trimmed. Enough to recognise; the dialog has the rest. */
+function submittedPreview(def,w){
+  const who = USERS[w.completedBy] ? USERS[w.completedBy].name : 'someone';
+  if(w.state==='REJECTED') return `${who} declined: ${w.rejectionReason||''}`;
+  if(w.state==='CANCELLED') return `Cancelled with the run.`;
+  const first = Object.values(w.result||{}).map(v=>String(v||'').trim()).find(v=>v);
+  const verb = w.kind==='BLOCKER' ? 'supplied' : 'entered';
+  if(!first) return `${who} closed this without entering anything.`;
+  return `${who} ${verb}: “${first.length>70?first.slice(0,70)+'…':first}”`;
+}
+function fieldLabel(def,key){
+  const rp = (def.resultParams||[]).find(p=>p.name===key);
+  if(rp) return rp.label;
+  const dp = (S.definition.dataParameters||[]).find(p=>p.name===key);
+  return dp ? dp.label : key;
+}
+function dlgSubmission(taskItemId){
+  const r = req();
+  const t = r.taskItems.find(x=>x.id===taskItemId);
+  const def = TASK_DEFS[t.def];
+  const w = lastSubmission(r,taskItemId);
+  const stateTone = {COMPLETED:'ok', REJECTED:'bad', CANCELLED:'neutral', EXPIRED:'warn'};
+
+  openModal(`<div class="dialog" role="dialog" aria-modal="true" aria-label="What was entered">
+    <div class="dhead">
+      <span style="color:var(--accent)">${def.icon}</span>
+      <h2>${esc(def.label)} — what was entered</h2>
+      <button class="iconbtn" data-act="close">${I.cross}</button>
+    </div>
+    <div class="dbody">
+      ${w?`
+        <div class="subhead">
+          <span class="pill ${stateTone[w.state]||'neutral'}">${esc(w.state.toLowerCase())}</span>
+          <b>${esc(USERS[w.completedBy]?USERS[w.completedBy].name:'—')}</b>
+          <span class="mono">${esc(w.completedAt||'')}</span>
+          ${w.kind==='BLOCKER'?`<span class="pill neutral" style="margin-left:auto">blocker</span>`:''}
+        </div>
+        ${w.rejectionReason?`<div class="task-err">${I.warn}
+          <div><b>Declined.</b> ${esc(w.rejectionReason)}</div></div>`:''}
+        ${Object.keys(w.result||{}).length
+          ? Object.entries(w.result).map(([k,v])=>`
+              <div class="field">
+                <label>${esc(fieldLabel(def,k))}</label>
+                ${String(v||'').length>60
+                  ? `<textarea readonly rows="4">${esc(v)}</textarea>`
+                  : `<input type="text" readonly value="${esc(v??'')}">`}
+              </div>`).join('')
+          : `<div style="font-size:12.5px;color:var(--ink-3)">Closed without any values entered.</div>`}
+        <div style="font-size:12px;color:var(--ink-3);border-top:1px solid var(--border);padding-top:11px">
+          The most recent close. Earlier attempts are in the execution log.
+        </div>`
+        : `<div class="empty">Nobody has closed this step yet.</div>`}
+    </div>
+    <div class="dfoot"><button class="btn" data-act="close">Close</button></div>
+  </div>`);
+}
+
 /* The completion form is generated from resultParams, exactly the way the task
    config form is generated from params. Above it sits what the signer is signing:
    whatever the preceding tasks handed forward. */
@@ -1774,6 +1858,7 @@ document.addEventListener('click', e=>{
       render(); toast('Task removed'); break;
     }
     case 'show-log': dlgLog(btn.dataset.id); break;
+    case 'show-submission': dlgSubmission(btn.dataset.id); break;
 
     case 'run-all': startRun(); break;
     case 'run-one': runSingle(btn.dataset.id); break;

@@ -134,6 +134,18 @@ Three things are worth pointing at while a run is parked:
   *on behalf of* M. Browett, *triggered by* K. Weber. The person who pressed Execute was long gone,
   and a system whose purpose is recording who agreed to what cannot be vague about that.
 
+### Seeing what somebody entered
+
+Once a manual step is closed, the card carries a one-line preview of what was typed —
+*M. Browett entered: "Planned maintenance 12.09.2026…"* — and a **View** button that reopens the
+same form, read-only, headed with who closed it and when. It is the form, not a log excerpt, so the
+labels are the ones the person saw. Blocker values appear the same way, labelled from the data
+parameters they filled.
+
+It shows the **most recent close** only. If a step was declined and then redone, the view is the
+approval that stuck; the earlier decline stays on the record in the execution log and as the change
+request it raised, which is where you would look for it anyway.
+
 ### Declining is a decision, not a breakage
 
 Marking a decline as *failed* is wrong by default: it paints a red error over a considered human
