@@ -49,6 +49,11 @@ generated from what the server declares about that task type.
 Adding a new kind of task means writing a server-side executor and nothing else. No new screen, no
 new dialog, no change to the request editor.
 
+**A `WorkItem`** is a step only a person can carry out — a document that must be signed before the
+next task files it. It is a task type like any other, so the requester puts it in the plan and
+reviewers approve it along with everything else. Execution parks there and resumes the moment the
+person closes it.
+
 ---
 
 ## The decisions that matter
@@ -125,12 +130,15 @@ approvals today) and a **per-attempt execution log** (there is no log table — 
 ## What gets built first
 
 A proof of concept proving the hard parts — the registry seam, server-side rule gating, approval
-invalidation and the failure surface — using a trivial `HelloWorld` task plus a deliberately failing
-one, so the failure badge and execution log are exercised for real.
+invalidation, the pause-and-resume of a manual step, and the failure surface — using a trivial
+`HelloWorld` task plus a deliberately failing one, so the failure badge and execution log are
+exercised for real.
 
-**Explicitly not in the POC:** notifications, assignment and due dates, asynchronous or long-running
-tasks, transactionality across "Execute all", free-text expression rules, and any migration from the
-existing engine.
+**Explicitly not in the POC:** notifications (the work item inbox stands in), due-date escalation and
+timeouts, binding expressions between one task's output and another's input, manual steps created
+*during* a run, transactionality across "Execute all", free-text expression rules, and any migration
+from the existing engine. Role-based assignment and a resumable run *are* in scope — manual tasks
+require both.
 
 Note that the prototype shows Cable Patch tasks because that communicates the feature; the POC ships
 HelloWorld. Nobody should read the port-level detail in the mockup as committed scope.

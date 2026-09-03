@@ -107,8 +107,21 @@ Base: `{restURL()}/…` → `https://{host}/aixboms/rest/…`. Bearer token via 
 | `POST` | `/taskrequests/{id}/change-requests` | Raise a change request |
 | `PATCH` | `/taskrequests/{id}/change-requests/{crId}` | `{ resolved: boolean }` |
 | `POST` | `/taskrequests/{id}/transitions` | `{ toStatus }` — guarded by the status graph |
-| `POST` | `/taskrequests/{id}/execute` | Execute all, or a subset |
+| `POST` | `/taskrequests/{id}/execute` | Start a run — returns when it pauses or finishes |
+| `GET` | `/taskrequests/{id}/runs`, `/runs/{runId}` | Run state |
+| `POST` | `/taskrequests/{id}/runs/{runId}/cancel` | Abandon a paused run and unlock authoring |
 | `GET` | `/taskrequests/{id}/executions?taskItemId=` | Execution log |
+
+**Work items** — top-level, because they are an inbox and their actor may not be able to address the
+parent request.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/workitems?assignedToMe=&state=&taskRequestId=` | The human task list |
+| `GET` | `/workitems/{wid}` | One work item, with its `context` |
+| `POST` | `/workitems/{wid}/claim` | Take a candidate-group item |
+| `POST` | `/workitems/{wid}/complete` | `{ result }` — validate, log, **resume the run** |
+| `POST` | `/workitems/{wid}/reject` | `{ reason }` — honours `onError` |
 
 Every mutating sub-resource returns the **refreshed `TaskRequestDTO`**, so the client never guesses
 at derived state (status, task item statuses, invalidated approvals, new version).
@@ -126,7 +139,10 @@ export interface TaskDefinitionDTO {
   label: string;
   description: string;
   icon?: string;
+  execution: 'AUTOMATIC' | 'MANUAL';   // default AUTOMATIC; see "Manual tasks"
   parameters: ParameterDTO[];   // reused verbatim from de.aixpertsoft.action.dto
+  resultParameters?: ParameterDTO[];   // MANUAL only — what the human supplies
+  defaultAssignedRoles?: string[];     // MANUAL only
 }
 
 // ---------- definition ----------
@@ -153,14 +169,15 @@ export interface DataParameterDTO {
 }
 
 // ---------- request ----------
-export type TaskItemStatus = 'NOT_RUN' | 'RUNNING' | 'SUCCEEDED' | 'FAILED';
+export type TaskItemStatus = 'NOT_RUN' | 'RUNNING' | 'WAITING' | 'SUCCEEDED' | 'FAILED';
 
 export interface TaskItemDTO {
   id: string;
   taskDefinitionName: string;
   label: string;
   config: Record<string, unknown>;   // validated against the TaskDefinition's Parameter[]
-  status: TaskItemStatus;            // server-owned
+  status: TaskItemStatus;            // server-owned; WAITING = parked on a work item
+  outputs?: Record<string, unknown>; // server-owned, written on SUCCEEDED from @Action outParameters
   lastAttempt?: number;              // server-owned
   lastError?: string;                // server-owned
 }
@@ -206,8 +223,84 @@ export interface TaskRequestContentDTO {
   approvals: ApprovalDTO[];          // server-owned
   changeRequests: ChangeRequestDTO[];// server-owned
   comments: CommentDTO[];            // server-owned
+  currentRun?: ExecutionRunDTO;      // server-owned — present while a run is in flight
 }
 ```
+
+### Manual tasks — human steps inside a run
+
+Some work has no executor. A task generates a document and a named person must digitally sign it
+before the next task files it. The design rule, taken from every engine that does this well:
+
+> A manual task is not "a task that does nothing". It is **a task that creates a work item and
+> suspends the run until that work item reaches a terminal state** — with an assignee, a payload it
+> shows the human, and a result it collects back.
+
+**Manual task types live in the same registry.** `TaskDefinitionDTO.execution` distinguishes them;
+manual types are declared server-side by an annotation scanned like `@Action` but carry no
+`IAction`. This buys the whole client surface unchanged — the tile picker, `supportedTaskDefinitions`,
+and the config form generated from `parameters`. The **completion form is generated from
+`resultParameters` by the same `Parameter[]` renderer**, so a manual task needs no new UI either.
+Ship one type in the POC, `manualSignOff`; admin-defined manual types (label and result fields
+authored in the definition editor, no code) are the natural extension.
+
+**The requester places manual steps in the plan**, like any other task. They are therefore visible
+before approval, covered by `taskConfigHash`, and counted by the gate. Steps that materialise
+*during* a run would undermine the product's central promise — that a request shows what is proposed
+before it runs — and are deliberately not supported.
+
+**Execution becomes a resumable run.** This is the substantive change: `POST /execute` can no longer
+be a loop inside one HTTP call, because a signature takes days. Note that the same mechanism covers
+slow automatic tasks, which the original non-goals flagged as needing a revisit.
+
+```ts
+export type RunState      = 'RUNNING' | 'WAITING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+export type WorkItemState = 'OPEN' | 'CLAIMED' | 'COMPLETED' | 'REJECTED' | 'CANCELLED' | 'EXPIRED';
+
+export interface ExecutionRunDTO {
+  id: string; taskRequestId: string;
+  state: RunState;
+  taskConfigHash: string;          // the plan this run executes — frozen for its lifetime
+  cursor: number;                  // index into taskItems
+  waitingOnWorkItemId?: string;
+  startedBy: string; startedAt: string; finishedAt?: string;
+}
+
+export interface WorkItemDTO {
+  id: string; runId: string; taskRequestId: string; taskItemId: string;
+  title: string; instructions?: string;
+  assignedRoles: string[];               // candidate group
+  assignedUser?: string;                 // set on claim
+  dueAt?: string;
+  state: WorkItemState;
+  context: Record<string, unknown>;      // outputs of preceding task items
+  result?: Record<string, unknown>;      // validated against resultParameters
+  completedBy?: string; completedAt?: string; rejectionReason?: string;
+}
+```
+
+`EXPIRED` is reserved now so adding timeouts later does not widen the state machine.
+
+**Work items are addressed globally, owned locally.** Their lifecycle belongs to the run — only the
+engine creates one, and deleting the request cascades — but they get their own table, REST collection
+and ACL, because three things demand it: they are an **inbox** ("what must I do?" queries across all
+requests, filtered by assignee, role, state and due date — the same argument this document already
+makes for real columns on the request); a signer may hold **no read permission** on the parent
+request; and a notification **links to a work item**, not to "request 1039, task 2". They are not
+merely `taskItem.status = WAITING` plus an assignee column: re-running a manual task creates a
+*second* work item, and both belong in the audit trail — the same reason `TaskExecutionLog` is
+separate from `TaskItem`. `ExecutionRun` stays a child of the request; it has no inbox pressure.
+
+**Task outputs carry the handoff.** `@Action` already declares `outParameters`; `TaskItemDTO.outputs`
+surfaces them, and a work item's `context` is the outputs of every preceding item in the run — which
+is what the signer is shown. **Deliberately no binding expressions** (`${task1.fileId}`): inventing
+an expression language here would repeat the mistake this document rejects for rules. Selective
+binding is a later feature.
+
+**Completion resumes the run — there is no "Continue" button.** In Camunda, Step Functions, Temporal
+and GitHub Actions alike, closing the human task *is* the resume signal. A separate button means two
+clicks for one decision and creates a "signed but not continued" limbo somebody has to chase. A
+per-definition flag for an explicit operator release is a documented extension, not the default.
 
 ### Rules
 
@@ -285,22 +378,67 @@ export interface TaskExecutionResultDTO {
 }
 export interface ExecuteReplyDTO {
   results: TaskExecutionResultDTO[];
+  run: ExecutionRunDTO;                // where the run got to
   request: TaskRequestContentDTO;      // refreshed
 }
 ```
+
+`TaskExecutionResultDTO.executedBy` is joined by `onBehalfOf?` and `triggeredBy?` — see
+"identity of a resumed run" below.
 
 **Server sequence for `POST /execute`:**
 
 ```
  1. load request, check WRITE permission
  2. 409 STALE_VERSION      if expectedTaskConfigHash != current
- 3. 403 RULE_NOT_SATISFIED if RuleEvaluator says no   ← the actual gate
- 4. for each task item, in order:
-      mark RUNNING → ActionExecutor.run(@Action by name, config) → mark SUCCEEDED | FAILED
-      append a TaskExecutionLog row for the attempt, always
-      on FAILED: honour definition.onError (STOP | CONTINUE)
- 5. return results + refreshed request
+ 3. 409 RUN_IN_PROGRESS    if a run is already RUNNING or WAITING
+ 4. 403 RULE_NOT_SATISFIED if RuleEvaluator says no   ← the actual gate, evaluated once
+ 5. create ExecutionRun { RUNNING, cursor: 0, taskConfigHash }, lock the authoring surface
+ 6. drive(run)
+
+drive(run):
+   while cursor < taskItems.length:
+     t = taskItems[cursor]
+     if definition(t).execution == MANUAL:
+        create WorkItem { OPEN, assignedRoles, context: outputs of items before cursor }
+        t.status = WAITING; run.state = WAITING; run.waitingOnWorkItemId = wi.id
+        return                                    ← the HTTP call ends here
+     mark RUNNING → ActionExecutor.run(@Action by name, config) → SUCCEEDED | FAILED
+     on SUCCEEDED: t.outputs = declared outParameters
+     append a TaskExecutionLog row for the attempt, always
+     on FAILED: honour definition.onError (STOP → run.state = FAILED; return)
+     cursor++
+   run.state = COMPLETED; unlock the authoring surface
 ```
+
+**Server sequence for `POST /workitems/{wid}/complete`:**
+
+```
+ 1. caller holds one of assignedRoles; work item OPEN | CLAIMED; run WAITING
+ 2. 400 VALIDATION_FAILED  if result does not satisfy resultParameters
+ 3. wi.COMPLETED; t.status = SUCCEEDED; t.outputs = result; append a log row
+ 4. run.state = RUNNING; cursor++
+ 5. drive(run)                                    ← auto-resume
+ 6. return refreshed request + run
+```
+
+`drive()` continuing inline is acceptable for the POC because the remaining tasks are fast. In
+production it belongs on a worker — **AixBOMS already runs Quartz** for `de.comconsult.wf` timeouts.
+
+**Identity of a resumed run.** After a pause, the person who pressed Execute is gone. Tasks that run
+after a resume log `executedBy: 'system'`, `onBehalfOf: <requester>`, `triggeredBy: <who closed the
+work item>`. For a subsystem whose purpose is a record of who agreed to what, this cannot be fudged.
+
+**A run freezes the plan.** While a run is `RUNNING` or `WAITING`, authoring saves, task edits and a
+second `/execute` are refused with `409 RUN_IN_PROGRESS`. Without it, a run paused for two days can
+have task 5 edited while tasks 1–3 are done: the hash moves, approvals are dismissed, and half a plan
+has executed under terms that no longer exist. Cancel the run to edit.
+
+**Gate approvals and work items are different things**, and the document should not let them blur.
+Gate approvals answer *"may this plan run at all?"* — before anything happens, about the whole plan,
+hash-bound. Work items answer *"do this one step now"* — during the run, about one task, producing a
+result. Manual steps are never gate rules. `allTasksSucceeded` needs no change: a `WAITING` item is
+not `SUCCEEDED`, which is already the right answer.
 
 **Not transactional across task items.** Each task is its own transaction; a partial run is a real,
 representable state (`SUCCEEDED` + `FAILED` + `NOT_RUN` side by side). The original document is
@@ -317,6 +455,7 @@ POC; re-run is the recovery path.
 | `NOT_FOUND` | 404 | unknown id, or unreadable — existence must not leak, matching `JsonDocumentStorageService` |
 | `FORBIDDEN` | 403 | ACL denies, or not permitted for this status transition |
 | `STALE_VERSION` | 409 | `baseVersion` / `expectedTaskConfigHash` mismatch |
+| `RUN_IN_PROGRESS` | 409 | authoring save, task edit or second `/execute` while a run is `RUNNING` or `WAITING` |
 | `IMMUTABLE_FIELD` | 400 | save tried to write approvals / status / execution state |
 | `INVALID_TRANSITION` | 400 | target status not reachable per the status graph |
 | `RULE_NOT_SATISFIED` | 403 | execute attempted while the gate is red — **carries the full `GateDTO` in `details`** |
@@ -413,9 +552,15 @@ migrated.
 
 ## Explicit non-goals for the POC
 
-Notifications; assignment and due dates; asynchronous / long-running tasks (the API here is
-synchronous — real provisioning takes minutes, and this will need revisiting); transactionality
-across "Execute all"; the JSONata expression rule arm; migration of anything from `de.comconsult.wf`.
+Notifications (the work item inbox stands in); due-date escalation and timeouts (`EXPIRED` is
+reserved but never set); binding expressions between task outputs and later task inputs; manual steps
+created *during* a run; transactionality across "Execute all"; the JSONata expression rule arm;
+migration of anything from `de.comconsult.wf`.
+
+**No longer non-goals.** Manual tasks brought pause/resume forward: a run suspends on a work item and
+resumes when it closes, so long-running execution and role-based **assignment** are both in scope.
+Individual automatic tasks are still dispatched synchronously inside `drive()`; making *those*
+asynchronous is the remaining piece, and the run state machine is the place it will land.
 
 ---
 
@@ -430,11 +575,15 @@ TaskRequest  ──1:N──▶  TaskItem  ──1:N──▶  TaskExecutionLog
              ──1:N──▶  Approval
              ──1:N──▶  ChangeRequest
              ──1:N──▶  Comment
+             ──1:N──▶  ExecutionRun ──1:N──▶ WorkItem ──N:1──▶ TaskItem
 ```
 
-Task config, `data` and rules as `"type": "JSON"` (`JsonDomain`) columns; **status, type, requester,
-dates and outcome as real columns** — the inbox filters and reports on those, and querying JSON CLOBs
-for them is painful. `TaskExecutionLog` should follow the platform's polymorphic
+Task config, `data`, task outputs, work item `context`/`result` and rules as `"type": "JSON"`
+(`JsonDomain`) columns; **status, type, requester, dates and outcome as real columns** — the inbox
+filters and reports on those, and querying JSON CLOBs for them is painful. The same rule applies
+harder to `WorkItem`: **`state`, `assignedRoles`, `assignedUser` and `dueAt` must be real, indexed
+columns**, because `GET /workitems?assignedToMe` is the query that makes manual tasks usable.
+`TaskExecutionLog` should follow the platform's polymorphic
 `RefObjType` / `RefObjNr` / `RefObjId` convention.
 
 ---
@@ -463,3 +612,14 @@ for them is painful. `TaskExecutionLog` should follow the platform's polymorphic
    - **Concurrency test** — two tabs, save from both. Second must get `409 STALE_VERSION`.
    - Add `HelloWorldFail` → execute all → "Failed execution" badge, `onError: STOP` leaves later
      tasks `NOT_RUN`, log dialog shows both attempts.
+   - **Manual task test** — a plan of *generate document → manualSignOff → archive*. Execute: the
+     first task succeeds, the second goes `WAITING`, the third stays `NOT_RUN`, and the reply carries
+     `run.state = WAITING`. `GET /workitems?assignedToMe=true` returns the item for an eligible
+     signer and nothing for anyone else. `POST /workitems/{wid}/complete` runs the third task
+     **without a second Execute call**, and its log row reads
+     `executedBy: system, onBehalfOf: <requester>, triggeredBy: <signer>`.
+   - **Frozen-plan test** — while the run is `WAITING`, `POST /taskrequests` with an edited task
+     config must return `409 RUN_IN_PROGRESS`, and the `taskConfigHash` must be unchanged afterwards.
+   - **Wrong-signer test** — `complete` called by a user outside `assignedRoles` must return `403`.
+   - **Refusal test** — `POST /workitems/{wid}/reject` with `onError: STOP` leaves the run `FAILED`
+     and later tasks `NOT_RUN`; the reason is on the work item and in the log.

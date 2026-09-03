@@ -227,6 +227,12 @@ input[type=text]:focus,select:focus,textarea:focus{border-color:var(--accent);ou
 .task-err{margin-top:8px;padding:8px 10px;background:var(--bad-soft);border:1px solid var(--bad-line);
   border-radius:var(--r);font-size:12.5px;color:var(--bad);display:flex;gap:7px;align-items:flex-start}
 .task-err .mono{font-size:11.5px}
+.task.waiting{border-color:var(--warn-line)}
+.task.waiting .task-ico{background:var(--warn-soft);color:var(--warn)}
+.task-wait{margin-top:8px;padding:9px 10px;background:var(--warn-soft);border:1px solid var(--warn-line);
+  border-radius:var(--r);font-size:12.5px;color:var(--warn);display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+.task-wait .wi{flex:none;display:grid;place-items:center}
+.task-wait .mono{font-size:11.5px}
 .task-acts{display:flex;gap:1px;flex:none;margin-left:6px}
 .task-acts .ico{
   width:28px;height:28px;padding:0;justify-content:center;border-color:transparent;
@@ -259,8 +265,11 @@ input[type=text]:focus,select:focus,textarea:focus{border-color:var(--accent);ou
 .gate{margin-top:18px;border:1px solid var(--border);border-radius:var(--r-lg);
   background:var(--surface);box-shadow:var(--shadow-1);overflow:hidden}
 .gate.open{border-color:var(--ok-line)}
+.gate.parked{border-color:var(--warn-line)}
 .gate-bar{display:flex;align-items:center;gap:10px;padding:9px 11px 9px 13px;flex-wrap:wrap}
 .gate.open .gate-bar{background:var(--ok-soft)}
+.gate.parked .gate-bar{background:var(--warn-soft)}
+.gate.parked .gate-toggle .gi{color:var(--warn)}
 .gate-toggle{
   display:flex;align-items:center;gap:8px;flex:1;min-width:0;text-align:left;
   background:none;border:0;padding:4px 2px;border-radius:var(--r);cursor:pointer;
@@ -354,6 +363,15 @@ input[type=text]:focus,select:focus,textarea:focus{border-color:var(--accent);ou
 .dbody{padding:16px;display:grid;gap:14px;max-height:62vh;overflow:auto}
 .dfoot{display:flex;gap:8px;justify-content:flex-end;padding:12px 16px;border-top:1px solid var(--border);
   background:var(--surface-2)}
+/* what a signer is shown before they sign */
+.ctxbox{border:1px solid var(--border);border-radius:var(--r);background:var(--surface-2);padding:11px 12px}
+.ctxbox h4{margin:0 0 8px;font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3)}
+.ctxgrp+.ctxgrp{margin-top:9px;padding-top:9px;border-top:1px solid var(--border)}
+.ctxgrp b{font-size:12.5px}
+.ctxrow{display:flex;gap:10px;justify-content:space-between;font-size:12.5px;margin-top:3px}
+.ctxrow>span:first-child{color:var(--ink-3)}
+.ctxrow .mono{font-size:11.5px;text-align:right;word-break:break-all}
+
 .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(158px,1fr));gap:10px}
 .tile{border:1px solid var(--border-strong);border-radius:var(--r-lg);background:var(--surface);
   padding:14px 12px;cursor:pointer;text-align:left;display:grid;gap:6px}
@@ -451,6 +469,10 @@ const I = {
   trash:'<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.6 4.2h10.8M6 4.2V2.8h4v1.4M4 4.2l.6 9h6.8l.6-9"/></svg>',
   play:'<svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M4.5 2.8 12.8 8l-8.3 5.2z"/></svg>',
   spin:'<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M8 1.8a6.2 6.2 0 1 1-4.4 1.8"/></svg>',
+  pause:'<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><rect x="4" y="3" width="3" height="10" rx="1"/><rect x="9" y="3" width="3" height="10" rx="1"/></svg>',
+  pen:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1.8 14.2h12.4"/><path d="M11.1 2.2a1.6 1.6 0 0 1 2.3 2.3l-7 7-3 .7.7-3z"/></svg>',
+  doc:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3.4 1.8h6l3.2 3.2v9.2H3.4z"/><path d="M9.2 1.9V5h3.2M5.6 8.4h4.8M5.6 10.9h3.2"/></svg>',
+  box:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1.8 4.6 8 1.8l6.2 2.8v6.8L8 14.2l-6.2-2.8z"/><path d="M1.8 4.6 8 7.4l6.2-2.8M8 7.4v6.8"/></svg>',
 };
 
 /* ============================ reference data ============================ */
@@ -459,6 +481,8 @@ const USERS = {
   as:{id:'as',name:'A. Schmidt',initials:'AS',roles:['Administrator','NetOps']},
   kw:{id:'kw',name:'K. Weber', initials:'KW',roles:['Administrator']},
   jn:{id:'jn',name:'J. Novak',  initials:'JN',roles:['Viewer']},
+  /* Not a person and never selectable — the identity a resumed run executes under. */
+  system:{id:'system',name:'System',initials:'SYS',roles:[]},
 };
 const USER_ORDER = ['mb','as','kw','jn'];
 
@@ -489,6 +513,41 @@ const TASK_DEFS = {
     desc:'Prints a greeting on the server. Used to prove the plumbing.',
     params:[{name:'greeting',label:'Greeting',type:'text',required:true,placeholder:'Guten Morgen'}],
     summary:c=>`"${c.greeting||''}"`,
+  },
+  genDoc:{
+    name:'genDoc', label:'Generate document', icon:I.doc,
+    desc:'Produces the change documentation and hands the file to the next task.',
+    params:[
+      {name:'template',label:'Template',type:'enum',values:['Change record','Decommission report'],required:true},
+    ],
+    /* What the server declares as @Action outParameters — the next task can read these. */
+    outputs:(c,r)=>{
+      const file = `${(c.template||'document').toLowerCase().replace(/\s+/g,'-')}-${r.id}.pdf`;
+      return {fileName:file, documentId:'DOC-'+r.id.replace(/\D/g,''), sha256:fnv(file)};
+    },
+    summary:c=>`${c.template||'—'}`,
+  },
+  signOff:{
+    name:'signOff', label:'Digital signature', icon:I.pen, manual:true,
+    desc:'A named person must sign before execution continues. No server executor — a human closes it.',
+    params:[
+      {name:'document',  label:'What is signed',type:'text',required:true,placeholder:'Decommission report for SW-07'},
+      {name:'signerRole',label:'Who may sign',  type:'enum',values:['Administrator','NetOps'],required:true},
+      {name:'dueBy',     label:'Due by',        type:'text',placeholder:'2026-09-05'},
+    ],
+    /* The completion form, generated the same way the config form is. */
+    resultParams:[
+      {name:'signatureRef',label:'Signature reference',type:'text',required:true,placeholder:'SIG-2026-0912'},
+      {name:'note',        label:'Note',               type:'text',placeholder:'Also the reason, if you refuse'},
+    ],
+    summary:c=>`${c.document||'—'} · ${c.signerRole||'—'}`,
+  },
+  archiveDoc:{
+    name:'archiveDoc', label:'Archive document', icon:I.box,
+    desc:'Files the signed document in the document store.',
+    params:[{name:'store',label:'Archive',type:'text',required:true,placeholder:'DMS / Change records'}],
+    outputs:(c)=>({archivedIn:c.store||'—'}),
+    summary:c=>`→ ${c.store||'—'}`,
   },
 };
 
@@ -554,7 +613,7 @@ function seed(){
           {at:'27.08.2026 08:41', who:'mb', text:'created this request from Cable Patch Order'},
           {at:'27.08.2026 09:02', who:'kw', text:'requested a change'},
         ],
-        logs:[],
+        logs:[], workItems:[], run:null,
       },
       {
         id:'TR-1039', name:'Decommission switch SW-07', requester:'mb', status:'APPROVED',
@@ -563,12 +622,18 @@ function seed(){
         taskItems:[
           {id:'ti3', def:'cablePatch', status:'NOT_RUN', attempts:0, config:{
             operation:'Disconnect', sourcePort:'RCK-R07-SW07 / Gi1/0/1', targetPort:'PP-1 / Port 4', cableType:'Cat6a'}},
+          {id:'ti6', def:'genDoc', status:'NOT_RUN', attempts:0, config:{
+            template:'Decommission report'}},
+          {id:'ti7', def:'signOff', status:'NOT_RUN', attempts:0, config:{
+            document:'Decommission report for SW-07', signerRole:'Administrator', dueBy:'2026-09-05'}},
+          {id:'ti8', def:'archiveDoc', status:'NOT_RUN', attempts:0, config:{
+            store:'DMS / Change records 2026'}},
         ],
         approvals:[
           {id:'a1', user:'kw', decision:'APPROVED', at:'26.08.2026 15:30', hash:null},
           {id:'a2', user:'as', decision:'APPROVED', at:'26.08.2026 15:44', hash:null},
         ],
-        changeRequests:[], comments:[], logs:[],
+        changeRequests:[], comments:[], logs:[], workItems:[], run:null,
         history:[{at:'26.08.2026 14:12', who:'as', text:'created this request from Cable Patch Order'}],
       },
       {
@@ -587,6 +652,7 @@ function seed(){
           {taskId:'ti5', attempt:1, at:'24.08.2026 11:40', by:'kw', outcome:'FAILED', ms:1380,
            detail:'BusinessLogicError: Port PP-3 / Port 24 is already carrying cable CBL-88213.\n  at de.aixpertsoft.taskrequest.actions.CablePatchAction.perform(CablePatchAction.java:118)'},
         ],
+        workItems:[], run:null,
         history:[{at:'24.08.2026 11:05', who:'kw', text:'created this request from Cable Patch Order'}],
       },
     ],
@@ -602,15 +668,25 @@ const hasRole = (u,r)=>USERS[u].roles.includes(r);
 const sleep = ms=>new Promise(r=>setTimeout(r,ms));
 
 /* Deterministic stand-in for the SHA-256 taskConfigHash in the spec. */
-function taskConfigHash(items){
-  const json = JSON.stringify(items.map(t=>({d:t.def,c:t.config})));
+function fnv(str){
   let h1=0x811c9dc5, h2=0x01000193;
-  for(let i=0;i<json.length;i++){
-    h1=(h1^json.charCodeAt(i))>>>0; h1=(h1*0x01000193)>>>0;
-    h2=(h2+json.charCodeAt(i)*(i+7))>>>0;
+  for(let i=0;i<str.length;i++){
+    h1=(h1^str.charCodeAt(i))>>>0; h1=(h1*0x01000193)>>>0;
+    h2=(h2+str.charCodeAt(i)*(i+7))>>>0;
   }
   return (h1.toString(16)+h2.toString(16)).padStart(12,'0').slice(0,12);
 }
+function taskConfigHash(items){
+  return fnv(JSON.stringify(items.map(t=>({d:t.def,c:t.config}))));
+}
+
+/* A run is in flight while it is working or parked on a work item. */
+function runInFlight(r){ return !!r.run && (r.run.state==='RUNNING' || r.run.state==='WAITING'); }
+function openWorkItems(r){ return (r.workItems||[]).filter(w=>w.state==='OPEN'); }
+function myWorkItems(r,user){
+  return openWorkItems(r).filter(w=>w.roles.some(ro=>hasRole(user,ro)));
+}
+function eligibleFor(w){ return USER_ORDER.filter(u=>w.roles.some(ro=>hasRole(u,ro))); }
 function stamp(){
   const d=new Date();
   const p=n=>String(n).padStart(2,'0');
@@ -699,6 +775,8 @@ function tipPanel(){
       <li>Switch to <b>A. Schmidt</b> and <b>K. Weber</b> (top right) and approve — watch the bar below the tasks count down.</li>
       <li>Resolve K. Weber's change request, tick <b>Change window confirmed</b> on the Data tab, then Execute.</li>
       <li>One task fails on an occupied port. Fix its target port — and see every approval get dismissed.</li>
+      <li>Open <b>TR-1039</b> and Execute. It parks on a <b>Digital signature</b>. Switch to
+        <b>K. Weber</b>, whose <i>Awaiting my action</i> tab now shows it, and sign — the rest runs on its own.</li>
     </ol>
     <div class="tipfoot">Everything runs in your browser. The approval quorum, the stale-approval check
       and the execution gate are the real logic from the specification — the Execute button is genuinely
@@ -709,6 +787,11 @@ function tipPanel(){
 /* ============================ render: inbox ============================ */
 function inboxFilter(){
   const m=S.me;
+  /* The human task list. In the real API this is GET /workitems?assignedToMe —
+     a query over work items, not over requests. */
+  if(S.inboxTab==='action'){
+    return S.requests.filter(r=>myWorkItems(r,m).length>0);
+  }
   if(S.inboxTab==='awaiting'){
     return S.requests.filter(r=>{
       if(r.requester===m) return false;
@@ -724,6 +807,7 @@ function inboxFilter(){
 function viewInbox(){
   const counts = {
     awaiting: (()=>{const t=S.inboxTab; S.inboxTab='awaiting'; const n=inboxFilter().length; S.inboxTab=t; return n;})(),
+    action:   S.requests.reduce((n,r)=>n+myWorkItems(r,S.me).length,0),
     mine:     S.requests.filter(r=>r.requester===S.me).length,
     open:     S.requests.filter(r=>r.status==='OPEN'||r.status==='APPROVED').length,
   };
@@ -737,6 +821,8 @@ function viewInbox(){
     <button class="btn primary" data-act="new-request">${I.plus} New task request</button>
   </div>
   <div class="tabs" role="tablist">
+    <button role="tab" aria-selected="${S.inboxTab==='action'}"   data-tab="action">Awaiting my action
+      ${counts.action?`<span class="pill warn">${counts.action}</span>`:`<span class="count">0</span>`}</button>
     <button role="tab" aria-selected="${S.inboxTab==='awaiting'}" data-tab="awaiting">Awaiting my approval <span class="count">${counts.awaiting}</span></button>
     <button role="tab" aria-selected="${S.inboxTab==='mine'}"     data-tab="mine">My requests <span class="count">${counts.mine}</span></button>
     <button role="tab" aria-selected="${S.inboxTab==='open'}"     data-tab="open">All open <span class="count">${counts.open}</span></button>
@@ -752,14 +838,18 @@ function inboxRow(r){
   const hash = taskConfigHash(r.taskItems);
   const good = r.approvals.filter(a=>a.decision==='APPROVED'&&a.hash===hash).length;
   const openCr = r.changeRequests.filter(c=>!c.resolved).length;
+  const mine = myWorkItems(r,S.me).length;
+  const parked = r.run && r.run.state==='WAITING';
   const bits = [`${r.taskItems.length} task${r.taskItems.length===1?'':'s'}`];
   if(appr) bits.push(`${good} of ${appr.min} approvals`);
   if(openCr) bits.push(`${openCr} open change request${openCr===1?'':'s'}`);
   if(failed) bits.push(`${failed} failed execution${failed===1?'':'s'}`);
+  else if(parked) bits.push(mine?'waiting for your signature':'waiting for a signature');
   else if(gate.canExecute) bits.push('ready to execute');
   return `<div class="row" data-open="${r.id}" tabindex="0" role="button">
     <div class="rmain">
       <div class="rtitle">
+        ${mine?`<span class="pill warn">${I.pause} your turn</span>`:''}
         <span class="pill ${STATUS_TONE[r.status]}">${r.status}</span>
         <span class="id mono">${r.id}</span>
         <strong>${esc(r.name)}</strong>
@@ -824,7 +914,9 @@ function viewRequest(){
 }
 
 function paneTasks(r,gate){
-  const locked = r.status==='ARCHIVED'||r.status==='REJECTED';
+  /* A run in flight freezes the plan: the hash it is executing must not move
+     under it, or half a plan runs under terms nobody approved. */
+  const locked = r.status==='ARCHIVED'||r.status==='REJECTED'||runInFlight(r);
   return `<div class="tasklist">
     ${r.taskItems.length? r.taskItems.map(t=>taskCard(r,t,locked)).join('')
       : `<div class="empty">No tasks yet. A request needs at least one task before it can be executed.</div>`}
@@ -836,17 +928,21 @@ function paneTasks(r,gate){
 }
 function taskCard(r,t,locked){
   const def = TASK_DEFS[t.def];
-  const tone = {NOT_RUN:'neutral',RUNNING:'blue',SUCCEEDED:'ok',FAILED:'bad'}[t.status];
-  const label= {NOT_RUN:'not run',RUNNING:'running…',SUCCEEDED:'succeeded',FAILED:'failed'}[t.status];
+  const tone = {NOT_RUN:'neutral',RUNNING:'blue',WAITING:'warn',SUCCEEDED:'ok',FAILED:'bad'}[t.status];
+  const label= {NOT_RUN:'not run',RUNNING:'running…',WAITING:'waiting for a person',
+                SUCCEEDED:'succeeded',FAILED:'failed'}[t.status];
   const taskLogs = r.logs.filter(l=>l.taskId===t.id);
   const last = taskLogs.slice(-1)[0];
   const logCount = taskLogs.length;
-  return `<article class="task ${t.status==='FAILED'?'failed':''}">
+  const w = (r.workItems||[]).find(x=>x.taskItemId===t.id && x.state==='OPEN');
+  const canSign = w && w.roles.some(ro=>hasRole(S.me,ro));
+  return `<article class="task ${t.status==='FAILED'?'failed':''} ${t.status==='WAITING'?'waiting':''}">
     <div class="task-top">
       <div class="task-ico">${def.icon}</div>
       <div class="task-main">
         <div class="task-name">
           <strong>${esc(def.label)}</strong>
+          ${def.manual?`<span class="pill neutral" title="No server executor — a person closes this one">manual</span>`:''}
           <span class="pill ${tone}">${t.status==='RUNNING'?I.spin:''}${label}</span>
           ${t.attempts>1?`<span class="pill neutral">attempt ${t.attempts}</span>`:''}
         </div>
@@ -854,7 +950,18 @@ function taskCard(r,t,locked){
           ${def.params.filter(p=>t.config[p.name]).map(p=>
             `<span class="kv">${esc(p.label)} <b>${esc(t.config[p.name])}</b></span>`).join('')}
         </div>
-        ${last && t.status==='SUCCEEDED' ? `<div class="task-note">ran ${esc(last.at)} by ${esc(USERS[last.by].name)}</div>`:''}
+        ${last && t.status==='SUCCEEDED' ? `<div class="task-note">ran ${esc(last.at)} by ${esc(USERS[last.by].name)}${
+          last.onBehalfOf?` on behalf of ${esc(USERS[last.onBehalfOf].name)}`:''}</div>`:''}
+        ${w ? `<div class="task-wait">
+            <span class="wi">${I.pause}</span>
+            <div style="flex:1">
+              <div><b>Execution is parked here.</b> Waiting for ${esc(w.roles.join(' or '))} —
+                ${eligibleFor(w).map(u=>esc(USERS[u].name)).join(', ')}${w.dueAt?` · due ${esc(w.dueAt)}`:''}</div>
+              <div style="margin-top:2px;opacity:.85">Work item <span class="mono">${esc(w.id)}</span> · the run resumes the moment it closes.</div>
+            </div>
+            ${canSign?`<button class="btn sm go" data-act="sign" data-id="${w.id}">${I.pen} Sign</button>`
+                     :`<span class="pill neutral">not yours to sign</span>`}
+          </div>`:''}
         ${t.status==='FAILED'? `<div class="task-err">${I.warn}<div>
             <div><b>Execution failed.</b> ${esc(t.error||'')}</div>
             <div class="mono" style="margin-top:3px;opacity:.85">de.aixpertsoft.taskrequest.actions.CablePatchAction:118</div>
@@ -864,8 +971,9 @@ function taskCard(r,t,locked){
         <button class="btn sm ico" data-act="config-task" data-id="${t.id}" ${locked?'disabled':''}
           title="Configure this task" aria-label="Configure this task">${I.gear}</button>
         <button class="btn sm ico" data-act="run-one" data-id="${t.id}"
-          title="${t.status==='FAILED'?'Re-run this task':'Run this task on its own'}"
-          aria-label="${t.status==='FAILED'?'Re-run this task':'Run this task on its own'}">${t.status==='FAILED'?I.rerun:I.play}</button>
+          ${def.manual||runInFlight(r)?'disabled':''}
+          title="${def.manual?'Manual tasks are closed by a person':t.status==='FAILED'?'Re-run this task':'Run this task on its own'}"
+          aria-label="Run this task on its own">${t.status==='FAILED'?I.rerun:I.play}</button>
         <button class="btn sm ico" data-act="show-log" data-id="${t.id}"
           title="Execution log" aria-label="Execution log">${I.log}${logCount?`<span class="n">${logCount}</span>`:''}</button>
         <button class="btn sm ico" data-act="del-task" data-id="${t.id}" ${locked?'disabled':''}
@@ -1001,20 +1109,37 @@ function gateBox(r,gate){
     ...gate.rules,
   ];
   const todo = checks.filter(x=>!x.satisfied).length;
-  return `<section class="gate ${gate.canExecute?'open':''}">
+  const waiting = r.run && r.run.state==='WAITING' ? openWorkItems(r)[0] : null;
+  const allDone = r.taskItems.length>0 && r.taskItems.every(t=>t.status==='SUCCEEDED');
+
+  /* Three states share this bar: a run parked on a person, a run working,
+     and no run at all — where the gate decides whether one may start. */
+  const head = waiting
+    ? `<span class="gi pausing">${I.pause}</span>
+       <span>Waiting for a signature <span class="gsub">— ${esc(eligibleFor(waiting).map(u=>USERS[u].name).join(' or '))}${
+         waiting.dueAt?`, due ${esc(waiting.dueAt)}`:''}</span></span>`
+    : allDone
+    ? `<span class="gi">${I.check}</span><span>All tasks completed <span class="gsub">— nothing left to run</span></span>`
+    : gate.canExecute
+    ? `<span class="gi">${I.check}</span><span>Ready to execute <span class="gsub">— all ${checks.length} checks passed</span></span>`
+    : `<span class="gi">${I.warn}</span><span>${todo} thing${todo===1?'':'s'} still ${todo===1?'needs':'need'} doing <span class="gsub">— before this request may run</span></span>`;
+
+  const action = waiting
+    ? `<button class="btn ghost" data-act="cancel-run"
+         title="Abandon the run and unlock the request for editing">Cancel run</button>`
+    : `<button class="btn ${gate.canExecute&&!allDone?'go':''}" data-act="run-all"
+         ${gate.canExecute&&!running&&!allDone&&!runInFlight(r)?'':'disabled'}
+         title="${gate.canExecute?'Run every task that has not succeeded yet':'Blocked until every check passes'}">
+         ${running?I.spin+' Running…':I.play+' Execute all tasks'}
+       </button>`;
+
+  return `<section class="gate ${waiting?'parked':gate.canExecute?'open':''}">
     <div class="gate-bar">
       <button class="gate-toggle" data-act="toggle-gate" aria-expanded="${S.gateOpen}" aria-controls="gate-detail">
-        <span class="gi">${gate.canExecute?I.check:I.warn}</span>
-        <span>${gate.canExecute
-          ? `Ready to execute <span class="gsub">— all ${checks.length} checks passed</span>`
-          : `${todo} thing${todo===1?'':'s'} still ${todo===1?'needs':'need'} doing <span class="gsub">— before this request may run</span>`}</span>
+        ${head}
         <span class="chev">${I.chevD}</span>
       </button>
-      <button class="btn ${gate.canExecute?'go':''}" data-act="run-all"
-        ${gate.canExecute&&!running?'':'disabled'}
-        title="${gate.canExecute?'Run every task that has not succeeded yet':'Blocked until every check passes'}">
-        ${running?I.spin+' Running…':I.play+' Execute all tasks'}
-      </button>
+      ${action}
     </div>
     ${S.gateOpen?`<div class="gate-detail" id="gate-detail">
       <div class="gate-rules">
@@ -1025,6 +1150,8 @@ function gateBox(r,gate){
       </div>
       <div class="gate-foot">
         <span class="hash" title="A fingerprint of every task and its settings. Edit a task and it changes — which is what dismisses approvals given for the old one.">fingerprint ${gate.hash}</span>
+        ${r.run?`<span class="hash" style="margin-left:12px"
+          title="A run is bound to the fingerprint it started on, and freezes the plan until it ends.">run ${esc(r.run.id)} · ${esc(r.run.state.toLowerCase())} · step ${Math.min(r.run.cursor+1,r.taskItems.length)} of ${r.taskItems.length} · started by ${esc(USERS[r.run.startedBy].name)}</span>`:''}
       </div>
     </div>`:''}
   </section>`;
@@ -1233,6 +1360,8 @@ function dlgLog(taskId){
           <span>Attempt ${l.attempt}</span>
           <span class="mono">${esc(l.at)}</span>
           <span class="mono">${esc(USERS[l.by].name)}</span>
+          ${l.onBehalfOf?`<span class="mono" style="color:var(--ink-3)">on behalf of ${esc(USERS[l.onBehalfOf].name)}</span>`:''}
+          ${l.triggeredBy?`<span class="mono" style="color:var(--ink-3)">· triggered by ${esc(USERS[l.triggeredBy].name)}</span>`:''}
           <span class="mono" style="margin-left:auto">${l.ms} ms</span>
         </div>
         <div class="logbody">${esc(l.detail)}</div>
@@ -1243,6 +1372,45 @@ function dlgLog(taskId){
     <div class="dfoot"><button class="btn" data-act="close">Close</button></div>
   </div>`);
 }
+/* The completion form is generated from resultParams, exactly the way the task
+   config form is generated from params. Above it sits what the signer is signing:
+   whatever the preceding tasks handed forward. */
+function dlgSign(workItemId){
+  const r = req();
+  const w = r.workItems.find(x=>x.id===workItemId);
+  const t = r.taskItems.find(x=>x.id===w.taskItemId);
+  const def = TASK_DEFS[t.def];
+  openModal(`<div class="dialog" role="dialog" aria-modal="true" aria-label="Sign off">
+    <div class="dhead">
+      <span style="color:var(--accent)">${def.icon}</span>
+      <h2>${esc(def.label)} — ${esc(w.title)}</h2>
+      <button class="iconbtn" data-act="close">${I.cross}</button>
+    </div>
+    <div class="dbody">
+      ${w.context.length? `<div class="ctxbox">
+        <h4>What you are signing</h4>
+        ${w.context.map(c=>`<div class="ctxgrp"><b>${esc(c.label)}</b>
+          ${Object.entries(c.outputs).map(([k,v])=>
+            `<div class="ctxrow"><span>${esc(k)}</span><span class="mono">${esc(String(v))}</span></div>`).join('')}
+        </div>`).join('')}
+      </div>` : `<div class="empty">No preceding task handed anything forward.</div>`}
+      ${def.resultParams.map(p=>`<div class="field">
+        <label>${esc(p.label)} ${p.required?'<span class="req">*</span>':''}</label>
+        <input type="text" data-p="${p.name}" placeholder="${esc(p.placeholder||'')}"></div>`).join('')}
+      <div style="font-size:12px;color:var(--ink-3);border-top:1px solid var(--border);padding-top:11px">
+        Signing closes this work item and <b>execution continues on its own</b> — the remaining tasks
+        run under the system identity, on behalf of ${esc(USERS[r.requester].name)}.
+        Refusing needs a reason in the Note field.
+      </div>
+    </div>
+    <div class="dfoot">
+      <button class="btn" data-act="close">Cancel</button>
+      <button class="btn" data-act="do-refuse" data-id="${w.id}">Refuse</button>
+      <button class="btn go" data-act="do-sign" data-id="${w.id}">${I.check} Sign</button>
+    </div>
+  </div>`);
+}
+
 function dlgNewRequest(){
   openModal(`<div class="dialog" role="dialog" aria-modal="true" aria-label="New task request">
     <div class="dhead"><h2>New task request</h2>
@@ -1263,7 +1431,7 @@ function dlgNewRequest(){
 }
 
 /* ============================ mutations ============================ */
-function note(r,text){ r.history.push({at:stamp(),who:S.me,text}); }
+function note(r,text,who){ r.history.push({at:stamp(),who:who||S.me,text}); }
 
 function approve(decision){
   const r=req(); const hash=taskConfigHash(r.taskItems);
@@ -1279,45 +1447,167 @@ function unapprove(){
   note(r,'withdrew their review'); r.version++;
   render(); toast('Withdrawn');
 }
-async function runTasks(ids){
+/* ---------------------------------------------------------------
+   Execution runs.
+
+   A run walks the task list with a cursor. An automatic task is
+   dispatched to its executor; a manual task creates a work item and
+   the run parks itself until a human closes it. Completing the work
+   item resumes the same run — there is no "continue" button, because
+   in every engine that does this well the completion *is* the resume.
+   --------------------------------------------------------------- */
+
+/* One task item, dispatched. Returns true if it succeeded. */
+async function runOneTask(r,t,actor){
+  const d = TASK_DEFS[t.def];
+  t.status='RUNNING'; render();
+  await sleep(520);
+  t.attempts++;
+  const fails = t.def==='cablePatch'
+    && t.config.operation==='Connect'
+    && OCCUPIED_PORTS.includes((t.config.targetPort||'').trim());
+  if(fails){
+    t.status='FAILED';
+    t.error=`Port ${t.config.targetPort} is already carrying cable CBL-88213.`;
+    r.logs.push({taskId:t.id, attempt:t.attempts, at:stamp(), outcome:'FAILED', ms:1380, ...actor,
+      detail:`BusinessLogicError: Port ${t.config.targetPort} is already carrying cable CBL-88213.\n`
+           + `  at de.aixpertsoft.taskrequest.actions.CablePatchAction.perform(CablePatchAction.java:118)\n`
+           + `  at de.aixpertsoft.action.ActionExecutor.run(ActionExecutor.java:64)`});
+    note(r,`ran ${d.label} — failed`, actor.by);
+    render();
+    return false;
+  }
+  t.status='SUCCEEDED'; t.error=null;
+  t.outputs = d.outputs ? d.outputs(t.config,r) : null;
+  r.logs.push({taskId:t.id, attempt:t.attempts, at:stamp(), outcome:'SUCCEEDED', ms:410, ...actor,
+    detail:`${d.label} completed — ${d.summary(t.config)}`
+         + (t.outputs?`\noutputs:\n`+Object.entries(t.outputs).map(([k,v])=>`  ${k}: ${v}`).join('\n'):'')});
+  note(r,`ran ${d.label} — succeeded`, actor.by);
+  render();
+  return true;
+}
+
+/* Everything a preceding task handed forward — the payload a signer is shown. */
+function priorOutputs(r,upTo){
+  return r.taskItems.slice(0,upTo)
+    .filter(t=>t.outputs)
+    .map(t=>({label:TASK_DEFS[t.def].label, outputs:t.outputs}));
+}
+
+function startRun(){
   const r=req();
+  const gate=evaluateGate(r);
+  /* The server re-evaluates the gate; the button state is only a hint. */
+  if(!gate.canExecute){
+    S.gateOpen=true; render();
+    toast('The server refused: rules are not satisfied'); return;
+  }
+  if(runInFlight(r)){ toast('A run is already in progress'); return; }
+  r.run = {id:'run'+(++S.seq), state:'RUNNING', cursor:0, hash:gate.hash,
+           startedBy:S.me, startedAt:stamp(), waitingOn:null, resumed:false, triggeredBy:null};
+  note(r,'started an execution run');
+  driveRun(r);
+}
+
+async function driveRun(r){
+  const run=r.run; if(!run) return;
+  run.state='RUNNING'; render();
+  while(run.cursor < r.taskItems.length){
+    const t = r.taskItems[run.cursor];
+    if(t.status==='SUCCEEDED'){ run.cursor++; continue; }
+    const d = TASK_DEFS[t.def];
+
+    if(d.manual){
+      const w = {id:'wi'+(++S.seq), runId:run.id, taskItemId:t.id,
+        title:t.config.document||d.label, roles:[t.config.signerRole||'Administrator'],
+        dueAt:t.config.dueBy||null, state:'OPEN', createdAt:stamp(),
+        context:priorOutputs(r,run.cursor), result:null};
+      r.workItems.push(w);
+      t.status='WAITING';
+      run.state='WAITING'; run.waitingOn=w.id;
+      note(r,`execution paused — waiting for a ${d.label.toLowerCase()}`, run.resumed?'system':S.me);
+      render();
+      toast(`Paused — waiting for ${t.config.signerRole||'someone'} to sign`);
+      return;
+    }
+
+    /* After a resume nobody is holding the request open, so the run continues
+       under the system identity, on behalf of the requester. */
+    const actor = run.resumed
+      ? {by:'system', onBehalfOf:r.requester, triggeredBy:run.triggeredBy}
+      : {by:run.startedBy};
+    const ok = await runOneTask(r,t,actor);
+    if(!ok && S.definition.onError==='STOP'){
+      run.state='FAILED'; run.finishedAt=stamp();
+      render(); toast('Run stopped after a failure — remaining tasks left untouched');
+      return;
+    }
+    run.cursor++;
+  }
+  run.state = r.taskItems.every(t=>t.status==='SUCCEEDED') ? 'COMPLETED' : 'FAILED';
+  run.finishedAt=stamp();
+  render();
+  toast(run.state==='COMPLETED'?'All tasks completed':'Run finished with failures');
+}
+
+async function completeWorkItem(id,result){
+  const r=req();
+  const w=r.workItems.find(x=>x.id===id); if(!w||w.state!=='OPEN') return;
+  const t=r.taskItems.find(x=>x.id===w.taskItemId);
+  const d=TASK_DEFS[t.def];
+  w.state='COMPLETED'; w.result=result; w.completedBy=S.me; w.completedAt=stamp();
+  t.status='SUCCEEDED'; t.error=null; t.attempts++; t.outputs=result;
+  r.logs.push({taskId:t.id, attempt:t.attempts, at:stamp(), by:S.me, outcome:'SUCCEEDED', ms:0,
+    detail:`${d.label} completed by ${USERS[S.me].name}.\n`
+         + Object.entries(result).filter(([,v])=>v).map(([k,v])=>`  ${k}: ${v}`).join('\n')});
+  note(r,`signed "${w.title}" — execution continues`);
+  r.run.cursor++; r.run.waitingOn=null;
+  r.run.resumed=true; r.run.triggeredBy=S.me;
+  closeModal(); render(); toast('Signed — execution continues');
+  await driveRun(r);
+}
+
+function rejectWorkItem(id,reason){
+  const r=req();
+  const w=r.workItems.find(x=>x.id===id); if(!w||w.state!=='OPEN') return;
+  const t=r.taskItems.find(x=>x.id===w.taskItemId);
+  const d=TASK_DEFS[t.def];
+  w.state='REJECTED'; w.rejectionReason=reason; w.completedBy=S.me; w.completedAt=stamp();
+  t.status='FAILED'; t.error=`Signature refused: ${reason}`; t.attempts++;
+  r.logs.push({taskId:t.id, attempt:t.attempts, at:stamp(), by:S.me, outcome:'FAILED', ms:0,
+    detail:`${d.label} refused by ${USERS[S.me].name}.\n  reason: ${reason}`});
+  note(r,`refused to sign "${w.title}"`);
+  r.run.waitingOn=null;
+  if(S.definition.onError==='STOP'){
+    r.run.state='FAILED'; r.run.finishedAt=stamp();
+    closeModal(); render(); toast('Signature refused — the run stopped here');
+  }else{
+    r.run.cursor++; r.run.resumed=true; r.run.triggeredBy=S.me;
+    closeModal(); render(); driveRun(r);
+  }
+}
+
+/* Ad-hoc dispatch of one task, outside a run. Deliberately still clickable when
+   the gate is red, so the server refusing it stays visible. */
+async function runSingle(id){
+  const r=req();
+  const t=r.taskItems.find(x=>x.id===id); if(!t) return;
+  if(TASK_DEFS[t.def].manual){ toast('A manual task is closed by its signer, not dispatched'); return; }
   const gate=evaluateGate(r);
   if(!gate.canExecute){
     S.gateOpen=true; render();
     toast('The server refused: rules are not satisfied'); return;
   }
-  for(const id of ids){
-    const t=r.taskItems.find(x=>x.id===id); if(!t) continue;
-    t.status='RUNNING'; render();
-    await sleep(520);
-    const fails = t.def==='cablePatch'
-      && t.config.operation==='Connect'
-      && OCCUPIED_PORTS.includes((t.config.targetPort||'').trim());
-    t.attempts++;
-    if(fails){
-      t.status='FAILED';
-      t.error=`Port ${t.config.targetPort} is already carrying cable CBL-88213.`;
-      r.logs.push({taskId:t.id, attempt:t.attempts, at:stamp(), by:S.me, outcome:'FAILED', ms:1380,
-        detail:`BusinessLogicError: Port ${t.config.targetPort} is already carrying cable CBL-88213.\n`
-             + `  at de.aixpertsoft.taskrequest.actions.CablePatchAction.perform(CablePatchAction.java:118)\n`
-             + `  at de.aixpertsoft.action.ActionExecutor.run(ActionExecutor.java:64)`});
-      note(r,`ran ${TASK_DEFS[t.def].label} — failed`);
-      render();
-      if(S.definition.onError==='STOP' && ids.length>1){
-        toast('Stopped after a failure — remaining tasks left untouched');
-        return;
-      }
-    }else{
-      t.status='SUCCEEDED'; t.error=null;
-      const d = TASK_DEFS[t.def];
-      r.logs.push({taskId:t.id, attempt:t.attempts, at:stamp(), by:S.me, outcome:'SUCCEEDED', ms:410,
-        detail:`${d.label} completed — ${d.summary(t.config)}`});
-      note(r,`ran ${d.label} — succeeded`);
-      render();
-    }
-  }
-  const allOk = r.taskItems.every(t=>t.status==='SUCCEEDED');
-  toast(allOk?'All tasks completed':'Finished with failures');
+  await runOneTask(r,t,{by:S.me});
+}
+
+function cancelRun(){
+  const r=req(); if(!runInFlight(r)) return;
+  openWorkItems(r).forEach(w=>{ w.state='CANCELLED'; });
+  r.taskItems.filter(t=>t.status==='WAITING').forEach(t=>{ t.status='NOT_RUN'; });
+  r.run.state='CANCELLED'; r.run.finishedAt=stamp();
+  note(r,'cancelled the execution run');
+  render(); toast('Run cancelled — the request is editable again');
 }
 
 /* ============================ events ============================ */
@@ -1423,8 +1713,24 @@ document.addEventListener('click', e=>{
     }
     case 'show-log': dlgLog(btn.dataset.id); break;
 
-    case 'run-all': runTasks(r.taskItems.filter(t=>t.status!=='SUCCEEDED').map(t=>t.id)); break;
-    case 'run-one': runTasks([btn.dataset.id]); break;
+    case 'run-all': startRun(); break;
+    case 'run-one': runSingle(btn.dataset.id); break;
+    case 'cancel-run': cancelRun(); break;
+    case 'sign': dlgSign(btn.dataset.id); break;
+    case 'do-sign': case 'do-refuse':{
+      const w=r.workItems.find(x=>x.id===btn.dataset.id);
+      const def=TASK_DEFS[r.taskItems.find(t=>t.id===w.taskItemId).def];
+      const result={};
+      document.querySelectorAll('#modal [data-p]').forEach(el=>{ result[el.dataset.p]=el.value.trim(); });
+      if(act==='do-refuse'){
+        if(!result.note){ toast('Refusing needs a reason — use the Note field'); break; }
+        rejectWorkItem(w.id, result.note); break;
+      }
+      let missing=null;
+      def.resultParams.forEach(p=>{ if(p.required && !result[p.name]) missing=missing||p.label; });
+      if(missing){ toast(`${missing} is required`); break; }
+      completeWorkItem(w.id, result); break;
+    }
 
     case 'new-request': dlgNewRequest(); break;
     case 'create-request':{
@@ -1435,6 +1741,7 @@ document.addEventListener('click', e=>{
       S.requests.unshift({
         id, name, requester:S.me, status:'OPEN', createdAt:stamp(), version:1,
         data, taskItems:[], approvals:[], changeRequests:[], comments:[], logs:[],
+        workItems:[], run:null,
         history:[{at:stamp(), who:S.me, text:`created this request from ${S.definition.name}`}],
       });
       S.seq++; S.openRequestId=id; S.screen='request'; S.requestTab='tasks';

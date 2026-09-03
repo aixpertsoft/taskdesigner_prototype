@@ -85,14 +85,16 @@ that this is configuration, not code.
 ### What is real and what is not
 
 **Real** — the rules engine, the approval quorum, role checks, the stale-approval dismissal, the
-status transition guards, and the execution gate. These are the logic described in
+status transition guards, the execution gate, and the run state machine that parks on a manual task
+and resumes when someone signs it. These are the logic described in
 [the specification](docs/specification.md), so the Execute button is genuinely blocked rather than
 merely drawn greyed out.
 
 **Simulated** — task execution. No server is contacted; a task "runs" on a timer and its outcome is
 decided by a hard-coded list of occupied ports.
 
-**Not present** — persistence, authentication, notifications, and anything asynchronous.
+**Not present** — persistence, authentication, notifications, and timeouts. A run pauses on a manual
+step and resumes by itself, but everything happens inside one browser tab.
 
 ### One deliberate rough edge
 

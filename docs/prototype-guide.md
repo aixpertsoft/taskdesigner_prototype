@@ -23,16 +23,19 @@ with its own pass/fail and a reason, and the Execute button follows it.
 
 ## 1. The inbox
 
-**What it shows.** Four tabs — *Awaiting my approval*, *My requests*, *All open*, *Everything* — over
-a list of requests. Each row carries its status, how many tasks it holds, approval progress, open
-change requests, and whether anything has failed.
+**What it shows.** Five tabs — *Awaiting my action*, *Awaiting my approval*, *My requests*,
+*All open*, *Everything* — over a list of requests. Each row carries its status, how many tasks it
+holds, approval progress, open change requests, and whether anything has failed or is parked waiting
+for a person.
 
 **Why it exists.** The original requirements document specified two editors and no list view. An
 approval tool without an inbox is not a daily tool: the first question anyone has when they log in is
-"what needs me?" and nothing in the original design answered it.
+"what needs me?" and nothing in the original design answered it. The two leading tabs answer the two
+forms that question takes — *something needs your signature* and *something needs your approval*.
 
 **Try:** switch between users and watch *Awaiting my approval* change. M. Browett sees nothing there,
-because the only open request he could act on is his own.
+because the only open request he could act on is his own. *Awaiting my action* stays empty until a
+run parks on a signature — see §6.
 
 ---
 
@@ -145,7 +148,45 @@ approvals, re-approve, and re-run. That exercises the entire integrity model in 
 
 ---
 
-## 6. Request types — the admin side
+## 6. A manual step — execution that waits for a person
+
+Open **TR-1039** (*Decommission switch SW-07*). It is already approved, so the bar under the tasks is
+green. Its plan has four steps: disconnect the cable, **generate document**, **digital signature**,
+**archive document**.
+
+Press **Execute all tasks**. The first two run, and then execution stops on the signature. The task
+card turns amber — *Execution is parked here. Waiting for Administrator* — and the bar changes to
+**Waiting for a signature**, offering only **Cancel run**.
+
+**Switch to K. Weber.** The inbox's first tab, *Awaiting my action*, now shows 1, and the row is
+flagged **your turn**. Open the request and press **Sign**. The dialog shows what the preceding task
+handed forward — the file name, document id and hash — above a form generated from the fields the
+signature declares. Fill in a signature reference and sign.
+
+**The remaining task runs on its own.** There is no "continue execution" button, and that is
+deliberate: in Camunda, Step Functions, Temporal and GitHub Actions alike, closing the human task
+*is* the resume signal. A second button would mean two clicks for one decision and a "signed but not
+continued" state that somebody has to chase.
+
+**Three things worth pointing out while it is parked:**
+
+- **The plan is frozen.** *Configure*, *Add task* and *Remove* are all disabled. A run is bound to
+  the fingerprint it started on; if task 4 could be edited while tasks 1–2 are already done, the hash
+  would move, approvals would be dismissed, and half a plan would have executed under terms nobody
+  approved.
+- **Nobody else can sign it.** As M. Browett — the requester, and NetOps rather than Administrator —
+  the card says *not yours to sign*. Assignment is by role, like approvals.
+- **The audit trail names three parties.** Open the log on the archive task: it ran as **System**,
+  *on behalf of* M. Browett, *triggered by* K. Weber. The person who pressed Execute was long gone,
+  and a system whose purpose is recording who agreed to what cannot be vague about that.
+
+**Also try:** *Refuse* instead of signing — with `onError: STOP` the run ends there and the last task
+stays `NOT_RUN`, with the reason on the record. Or **Cancel run** while parked, and watch the request
+become editable again with the completed steps keeping their status.
+
+---
+
+## 7. Request types — the admin side
 
 **Status workflow** — the transition graph, with the roles allowed on each arrow. In the real
 implementation this is the existing `ProjectStatusTransitionsDef` React Flow editor, not a new one.
@@ -180,8 +221,13 @@ that the gate lives on the server and the button's state is only a hint.
 
 ## What is not modelled
 
-Persistence, authentication, notifications, asynchronous execution, and the BC4J layer. Task
+Persistence, authentication, notifications, due dates and timeouts, and the BC4J layer. Task
 execution is simulated on a timer with a hard-coded list of occupied ports.
+
+A run *does* pause on a manual step and resume when it closes, but everything happens in one browser
+tab — there is no worker, no polling and no way for the signature to arrive from elsewhere. In the
+real implementation the resume runs on a worker, and the work item is a top-level record with its
+own inbox query.
 
 The prototype also shows **Cable Patch** tasks throughout because that communicates the feature. The
 POC ships **HelloWorld**. Nobody should read the port-level detail as committed scope.
@@ -193,6 +239,10 @@ POC ships **HelloWorld**. Nobody should read the port-level detail as committed 
 `evaluateRule()` and `evaluateGate()` in `index.html` are the parts worth keeping — they map directly
 onto `src/projects/client/task-request/rules/evaluateRule.ts`, and the same fixture table should
 drive the Java `RuleEvaluator` tests. `TASK_DEFS` is the shape `taskDefinitionRegistry.tsx` needs.
+
+`driveRun()` / `completeWorkItem()` are worth keeping as a statement of intent rather than as code:
+the cursor, the park on a manual task, and the resume-on-completion are the server's `drive()` loop
+in the specification. In the real implementation they live in Java, not the client.
 
 The render functions are throwaway: the real implementation is React and MUI on the existing designer
 chassis.
