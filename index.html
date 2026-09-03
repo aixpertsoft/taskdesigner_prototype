@@ -525,15 +525,15 @@ const USERS = {
 };
 const USER_ORDER = ['mb','as','kw','jn'];
 
-const STATUS_TRANSITIONS = [
-  {from:'OPEN',      to:'APPROVED',  roles:['Administrator']},
-  {from:'OPEN',      to:'REJECTED',  roles:['Administrator']},
-  {from:'APPROVED',  to:'OPEN',      roles:['Administrator','NetOps']},
-  {from:'APPROVED',  to:'COMPLETED', roles:['Administrator','NetOps']},
-  {from:'REJECTED',  to:'OPEN',      roles:['Administrator']},
-  {from:'COMPLETED', to:'ARCHIVED',  roles:['Administrator']},
-];
-const STATUS_TONE = {OPEN:'blue',APPROVED:'ok',COMPLETED:'neutral',ARCHIVED:'neutral',REJECTED:'bad'};
+/* A request's status is DERIVED from its execution, never set by hand. The
+   original design had a second, user-driven state machine next to the run's —
+   with APPROVED-the-status competing with the approvals rule for the same word.
+   One lifecycle is enough: open until the work is done. */
+const STATUS_TONE = {OPEN:'blue', COMPLETED:'ok'};
+function requestStatus(r){
+  return r.taskItems.length && r.taskItems.every(t=>t.status==='SUCCEEDED'||t.status==='SKIPPED')
+    ? 'COMPLETED' : 'OPEN';
+}
 
 /* ============================ state ============================ */
 let S;
@@ -588,7 +588,7 @@ function seed(){
     requests:[
       {
         id:'TR-2087', name:'Notify customers — R12 uplink switch replacement',
-        requester:'mb', status:'OPEN',
+        requester:'mb',
         createdAt:'03.09.2026 09:14', version:3,
         data,
         /* Instantiated from the flow, exactly as a new request would be — so the
@@ -724,7 +724,6 @@ function evaluateRule(rule,r){
    GateDTO the real server returns inside a RULE_NOT_SATISFIED refusal — the
    server decides, but it also explains, and the client renders what it sent. */
 function gateRefusal(r, gate){
-  if(r.status==='ARCHIVED'||r.status==='REJECTED') return `the request is ${r.status}`;
   if(gate.noTasks) return 'a request needs at least one task';
   const failing = gate.rules.filter(x=>!x.satisfied);
   if(!failing.length) return 'rules are not satisfied';
@@ -739,7 +738,7 @@ function evaluateGate(r){
     rules,
     hash: taskConfigHash(r),
     noTasks,
-    canExecute: !noTasks && rules.every(x=>x.satisfied) && r.status!=='ARCHIVED' && r.status!=='REJECTED',
+    canExecute: !noTasks && rules.every(x=>x.satisfied),
   };
 }
 
@@ -821,13 +820,13 @@ function inboxFilter(){
     if(!requiresApprovals()) return [];
     return S.requests.filter(r=>{
       if(r.requester===m) return false;
-      if(r.status!=='OPEN') return false;
+      if(requestStatus(r)!=='OPEN') return false;
       const hash=taskConfigHash(r);
       return !r.approvals.some(a=>a.user===m && a.hash===hash);
     });
   }
   if(S.inboxTab==='mine')   return S.requests.filter(r=>r.requester===m);
-  if(S.inboxTab==='open')   return S.requests.filter(r=>r.status==='OPEN'||r.status==='APPROVED');
+  if(S.inboxTab==='open')   return S.requests.filter(r=>requestStatus(r)==='OPEN');
   return S.requests;
 }
 function viewInbox(){
@@ -837,7 +836,7 @@ function viewInbox(){
     awaiting: (()=>{const t=S.inboxTab; S.inboxTab='awaiting'; const n=inboxFilter().length; S.inboxTab=t; return n;})(),
     action:   S.requests.reduce((n,r)=>n+myWorkItems(r,S.me).length,0),
     mine:     S.requests.filter(r=>r.requester===S.me).length,
-    open:     S.requests.filter(r=>r.status==='OPEN'||r.status==='APPROVED').length,
+    open:     S.requests.filter(r=>requestStatus(r)==='OPEN').length,
   };
   const list = inboxFilter();
   return `
@@ -878,7 +877,7 @@ function inboxRow(r){
     <div class="rmain">
       <div class="rtitle">
         ${mine?`<span class="pill warn">${I.pause} your turn</span>`:''}
-        <span class="pill ${STATUS_TONE[r.status]}">${r.status}</span>
+        <span class="pill ${STATUS_TONE[requestStatus(r)]}">${requestStatus(r)}</span>
         <span class="id mono">${r.id}</span>
         <strong>${esc(r.name)}</strong>
         ${failed?`<span class="pill bad">${I.warn} failed</span>`:''}
@@ -893,24 +892,14 @@ function inboxRow(r){
 function viewRequest(){
   const r = req(); if(!r) return viewInbox();
   const gate = evaluateGate(r);
-  const allowed = STATUS_TRANSITIONS.filter(t=>t.from===r.status && t.roles.some(ro=>hasRole(S.me,ro)));
   const openCr = r.changeRequests.filter(c=>!c.resolved).length;
 
   return `
   <div class="rq-head">
     <button class="backlink" data-act="back">${I.chevL} All task requests</button>
     <div class="rq-title">
-      <span class="pill ${STATUS_TONE[r.status]}">${r.status}</span>
+      <span class="pill ${STATUS_TONE[requestStatus(r)]}">${requestStatus(r)}</span>
       <h1>${esc(r.name)}</h1>
-      <div class="rq-actions">
-        ${allowed.length
-          ? `<select data-act="transition" aria-label="Change status" style="width:auto">
-               <option value="">Move to…</option>
-               ${allowed.map(t=>`<option value="${t.to}">${t.to}</option>`).join('')}
-             </select>`
-          : ''}
-        <button class="btn ghost" data-act="save">Save</button>
-      </div>
     </div>
     <div class="rq-sub">
       <span class="mono">${r.id}</span><span>·</span>
@@ -942,7 +931,7 @@ function viewRequest(){
 function paneTasks(r,gate){
   /* A run in flight freezes the plan: the hash it is executing must not move
      under it, or half a plan runs under terms nobody approved. */
-  const locked = r.status==='ARCHIVED'||r.status==='REJECTED'||runInFlight(r);
+  const locked = requestStatus(r)==='COMPLETED'||runInFlight(r);
   /* An insert point between every pair of steps, so an extra task can go where it
      belongs in the sequence rather than only at the end. */
   const gap = i => locked ? '' :
@@ -979,7 +968,7 @@ function taskCard(r,t,locked){
       <div class="task-main">
         <div class="task-name">
           <strong>${esc(def.label)}</strong>
-          ${t.required?`<span class="pill blue" title="Part of the ${esc(S.definition.name)} process">step</span>`:''}
+          ${t.stepId?'':`<span class="pill warn" title="Added to this request by hand — not part of the standard ${esc(S.definition.name)} flow">added</span>`}
           ${def.manual?`<span class="pill neutral" title="No server executor — a person closes this one">manual</span>`:''}
           <span class="pill ${tone}">${t.status==='RUNNING'?I.spin:''}${label}</span>
           ${t.attempts>1?`<span class="pill neutral">attempt ${t.attempts}</span>`:''}
@@ -1049,7 +1038,7 @@ function paneData(r){
                  : frozen  ? `Frozen: the approvals for this run cover this value.` : '';
       if(p.type==='boolean'){
         return `<div class="field">
-          <label>${esc(p.label)}${written?' <span class="pill neutral">set by execution</span>':''}</label>
+          <label>${esc(p.label)}${written?' <span class="pill neutral">written by a task</span>':''}</label>
           <label class="switch">
             <input type="checkbox" data-act="data-bool" data-name="${p.name}" ${v?'checked':''}
               ${disabled?'disabled':''}>
@@ -1062,7 +1051,7 @@ function paneData(r){
         </div>`;
       }
       return `<div class="field">
-        <label>${esc(p.label)}${written?' <span class="pill neutral">set by execution</span>':''}</label>
+        <label>${esc(p.label)}${written?' <span class="pill neutral">written by a task</span>':''}</label>
         <input type="text" value="${esc(v??'')}" data-act="data-text" data-name="${p.name}"
           ${disabled?'disabled':''}>
         ${note?`<span class="hint">${esc(note)}</span>`:''}
@@ -1126,7 +1115,7 @@ function panelApprovals(r,gate){
   const mine = r.approvals.find(a=>a.user===S.me);
   const isRequester = r.requester===S.me;
   const canApprove = !isRequester && (!rule||!rule.roles.length||rule.roles.some(ro=>hasRole(S.me,ro)))
-                     && r.status==='OPEN';
+                     && requestStatus(r)==='OPEN';
 
   const rows = USER_ORDER.filter(u=>u!==r.requester).map(u=>{
     const a = r.approvals.find(x=>x.user===u);
@@ -1160,7 +1149,7 @@ function panelApprovals(r,gate){
                </div>`)
         : `<div class="hint" style="font-size:11.5px;color:var(--ink-3)">
              ${isRequester?'You opened this request, so you cannot approve it.'
-               : r.status!=='OPEN' ? `Approvals are closed while the request is ${r.status}.`
+               : requestStatus(r)!=='OPEN' ? 'Approvals are closed — the work is done.'
                : `${esc(me().name)} does not hold a role that may approve this request type.`}
            </div>`}
     </div>
@@ -1843,8 +1832,6 @@ document.addEventListener('click', e=>{
     case 'toggle-gate': S.gateOpen=!S.gateOpen; render(); break;
     case 'back': case 'back-inbox': S.screen='inbox'; render(); break;
     case 'close': closeModal(); break;
-    case 'save': r.version++; render(); toast(`Saved — version ${r.version}`); break;
-
     case 'approve':   approve('APPROVED'); break;
     case 'reject':    approve('REJECTED'); break;
     case 'unapprove': unapprove(); break;
@@ -1950,7 +1937,7 @@ document.addEventListener('click', e=>{
       const items = instantiateFlow(S.definition, S.seq);
       S.seq += items.length;
       S.requests.unshift({
-        id, name, requester:S.me, status:'OPEN', createdAt:stamp(), version:1,
+        id, name, requester:S.me, createdAt:stamp(), version:1,
         data, taskItems:items, approvals:[], changeRequests:[], comments:[], logs:[],
         workItems:[], run:null,
         history:[{at:stamp(), who:S.me,
@@ -1968,11 +1955,6 @@ document.addEventListener('change', e=>{
   const el=e.target; const act=el.dataset.act; if(!act) return;
   const r=req();
   if(act==='data-bool'){ r.data[el.dataset.name]=el.checked; r.version++; render(); return; }
-  if(act==='transition'){
-    const to=el.value; if(!to) return;
-    r.status=to; note(r,`moved this request to ${to}`); r.version++;
-    render(); toast(`Moved to ${to}`); return;
-  }
 });
 document.addEventListener('input', e=>{
   const el=e.target;

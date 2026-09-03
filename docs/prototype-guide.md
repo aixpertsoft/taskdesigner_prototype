@@ -85,6 +85,9 @@ the conditions are met.
 
 **Task cards** carry the step, its status, the settings it was configured with, and a small row of
 actions — the execution log and remove; nothing more. A manual step also shows who it is waiting for.
+Steps from the standard flow carry no badge — they are the normal case; a task somebody added by
+hand is marked **added**, because a deviation from the standard process is precisely what an
+approver should look at.
 
 **Task settings are fixed at creation.** Template steps take their values from the request type's
 flow defaults; an ad-hoc task is initialised once, in the form shown when it is added. There is no
@@ -100,7 +103,7 @@ special case.
 while any is open, the gate is red.
 
 **Data** is the interesting one during a run. Two fields are yours to edit — the maintenance window
-and the affected system. The rest are marked **set by execution** and are read-only: they are written
+and the affected system. The rest are marked **written by a task** and are read-only: they are written
 by a task's output mapping. If a requester could type into them, they could forge the fingerprint of
 a document the server signed.
 
@@ -248,7 +251,7 @@ Each step has two halves, and the split is deliberate.
 
 | | |
 | --- | --- |
-| **required** | The requester cannot remove it. On a task card it shows as a *step* badge and the delete button is disabled. |
+| **required** | The requester cannot remove it — the card's delete button is disabled, with the reason in its tooltip. |
 | **defaults** | Pre-filled into the task item — the sender address, who signs, the due date. Still editable per request. |
 
 **Runtime configuration** — how the *engine* behaves when it gets here. None of it is shown to the
@@ -310,17 +313,26 @@ has to remember to configure it.
 
 Press **Supply & continue** and provide the value. Note what the dialog says: what you supply is
 recorded as execution output, attributed to you, so it does **not** disturb the approvals already
-given. That is also why the Data tab is frozen during a run — the author-owned fields are what the
+given. That is also why the Data tab is frozen during a run — the requester's own fields are what the
 approvals cover, so a blocker collects its values through the work item instead.
 
 ### The rest of the screen
 
-**Status workflow** — the transition graph, with the roles allowed on each arrow. In the real
-implementation this is the existing `ProjectStatusTransitionsDef` React Flow editor, not a new one.
+**No status workflow.** A request's status is *derived*: open until every step has succeeded or been
+skipped, then completed — at which point authoring locks and approvals close. The original design had
+a second, user-driven state machine (OPEN → APPROVED → COMPLETED…), which competed with the run for
+the same words: APPROVED-the-status against the approvals rule, COMPLETED-the-status against the
+run's own completed. One lifecycle is enough. The platform's role-gated status workflow
+(`ProjectStatusTransitionsDef`) remains in the specification as production reuse if a hand-driven
+lifecycle turns out to be needed; the prototype deliberately does not duplicate it.
 
-**Data parameters** — every field is either **author** (the requester's; inside the hash; frozen
-during a run) or **execution** (written by a task's output mapping; outside the hash, which is why a
-run does not dismiss its own approvals).
+**Data parameters** — every field is either **filled in by the requester** (inside the hash; frozen
+during a run) or **written by a task** during the run (outside the hash, which is why a run does not
+dismiss its own approvals). The list is fully editable — label, type, owner and default
+inline, new fields via *Add parameter*. Deleting a field is refused while anything still references
+it by name — a task binding, a step's skip or precondition rule — with the references listed, since
+a silent delete would break those bindings without a trace. Names themselves are fixed once created,
+for the same reason.
 
 **Execution rules** — these gate the *whole run* before it starts, and can be added and removed.
 There are two types, and deliberately only two:
@@ -337,7 +349,7 @@ judged once the run is under way.
 closes up, and the *Awaiting my approval* inbox tab is hidden — there is nobody to show, and drawing
 an empty panel would invent a step the process does not have. Add it back and everything returns.
 
-One nuance worth knowing: an approval binds to the **plan and the author data**, not to the request
+One nuance worth knowing: an approval binds to the **plan and the requester's data**, not to the request
 type's rules. So removing and re-adding an approvals rule does not dismiss sign-off already given —
 the plan never changed. Changing the *quorum*, on the other hand, re-evaluates the gate immediately.
 Whether a rule edit should invalidate in-flight requests is the `definitionVersion` question in

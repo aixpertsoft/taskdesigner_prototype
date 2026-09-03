@@ -75,8 +75,8 @@ person. Press **Submit draft** and write the notification. The server signs it, 
 administrator. Switch to K. Weber, whose *Awaiting my action* tab now shows 1, and press **Approve**.
 The mail sends by itself. Nobody pressed "continue" — closing the human step *is* the resume.
 
-**2. Watch the data fill in.** The **Data** tab has two fields you own and several marked *set by
-execution*. The subject, text, fingerprint and delivery status are written by the run, through the
+**2. Watch the data fill in.** The **Data** tab has two fields you own and several marked *written
+by a task*. The subject, text, fingerprint and delivery status are written by the run, through the
 task definitions' output mappings, and are read-only by design.
 
 **3. Watch a task fail.** Put an address at `@invalid.example` in the recipients at step 3. The send
@@ -90,8 +90,9 @@ the required approval count makes the gate respond immediately: configuration, n
 ### What is real and what is not
 
 **Real** — the rules engine, the approval quorum, role checks, the stale-approval dismissal, the
-status transition guards, the execution gate, and the run state machine that parks on a manual task
-and resumes when someone signs it. These are the logic described in
+execution gate, and the run state machine that parks on a manual task and resumes when someone signs
+it. A request's status is derived from that machine — open until the work is done — rather than
+being a second, hand-driven state machine beside it. These are the logic described in
 [the specification](docs/specification.md), so the Execute button is genuinely blocked rather than
 merely drawn greyed out.
 

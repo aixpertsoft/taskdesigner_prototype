@@ -83,13 +83,11 @@ function viewDefinition(){
   </div>
   <div class="def-body">
     <nav class="sidenav">
-      ${[['flow','Task flow'],['workflow','Status workflow'],
-         ['data','Data parameters'],['rules','Execution rules']]
+      ${[['flow','Task flow'],['data','Data parameters'],['rules','Execution rules']]
         .map(([k,l])=>`<button data-def="${k}" aria-current="${S.defSection===k}">${l}</button>`).join('')}
     </nav>
     <div class="card">
       ${S.defSection==='flow'    ? defFlow()
-       :S.defSection==='workflow'? defWorkflow()
        :S.defSection==='data'    ? defData()
        :                           defRules()}
     </div>
@@ -278,66 +276,97 @@ function defFlow(){
   </div>`;
 }
 
-/* ------------------------------------------------------------ status graph */
-function defWorkflow(){
-  const box=(x,y,w,label,tone)=>{
-    const fill = tone==='ok'?'var(--ok-soft)':tone==='bad'?'var(--bad-soft)':tone==='blue'?'var(--accent-soft)':'var(--surface-2)';
-    const line = tone==='ok'?'var(--ok-line)':tone==='bad'?'var(--bad-line)':tone==='blue'?'var(--accent-line)':'var(--border-strong)';
-    const ink  = tone==='ok'?'var(--ok)':tone==='bad'?'var(--bad)':tone==='blue'?'var(--accent)':'var(--ink-2)';
-    return `<g><rect x="${x}" y="${y}" width="${w}" height="34" rx="6" fill="${fill}" stroke="${line}"/>
-      <text x="${x+w/2}" y="${y+22}" text-anchor="middle" fill="${ink}"
-        style="font:600 11.5px var(--sans);letter-spacing:.05em">${label}</text></g>`;
-  };
-  const arrow=(x1,y1,x2,y2,dash)=>`<path d="M${x1} ${y1} L${x2} ${y2}" stroke="var(--border-strong)"
-      stroke-width="1.4" marker-end="url(#ah)" ${dash?'stroke-dasharray="4 3"':''} fill="none"/>`;
-  return `<div class="graph">
-    <svg width="720" height="200" role="img" aria-label="Status workflow graph">
-      <defs><marker id="ah" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
-        <path d="M0 0 L8 4 L0 8 z" fill="var(--border-strong)"/></marker></defs>
-      ${box(10,26,96,'OPEN','blue')}
-      ${box(186,26,110,'APPROVED','ok')}
-      ${box(376,26,116,'COMPLETED','')}
-      ${box(572,26,110,'ARCHIVED','')}
-      ${box(186,124,110,'REJECTED','bad')}
-      ${arrow(108,43,184,43)}
-      ${arrow(298,43,374,43)}
-      ${arrow(494,43,570,43)}
-      ${arrow(240,60,240,122,true)}
-      ${arrow(186,60,110,60,true)}
-      <text x="150" y="34" text-anchor="middle" fill="var(--ink-3)" style="font:400 10px var(--mono)">Administrator</text>
-      <text x="336" y="34" text-anchor="middle" fill="var(--ink-3)" style="font:400 10px var(--mono)">NetOps</text>
-      <text x="532" y="34" text-anchor="middle" fill="var(--ink-3)" style="font:400 10px var(--mono)">Administrator</text>
-      <text x="250" y="96" fill="var(--ink-3)" style="font:400 10px var(--mono)">reject</text>
-      <text x="118" y="74" fill="var(--ink-3)" style="font:400 10px var(--mono)">send back</text>
-    </svg>
-    <p style="margin:12px 0 0;color:var(--ink-3);font-size:12.5px;max-width:60ch">
-      Each arrow carries the roles allowed to make that move, so who may advance a request is a
-      setting, not a code change. This is the transition editor AixBOMS already uses for ticket
-      status.
-    </p>
-  </div>`;
+/* -------------------------------------------------------- data parameters */
+/* Everything that references a data parameter BY NAME. Deleting one that is
+   still referenced would silently break bindings and rules, so it is refused
+   with the referencing places named. */
+function dataParamUses(name){
+  const uses=[];
+  (TASK_DOC.definitions||[]).forEach(d=>{
+    const sc=d.serverActionConfig||{}, mc=d.manualTaskConfig||{};
+    (sc.inputs||[]).forEach(b=>{ if(b.source&&b.source.kind==='REQUEST_DATA'&&b.source.path===name)
+      uses.push(`${d.name} reads it (input "${b.target}")`); });
+    [...(sc.outputs||[]),...(mc.outputs||[])].forEach(m=>{ if(m.target&&m.target.path===name)
+      uses.push(`${d.name} writes it (output "${m.source}")`); });
+  });
+  (S.definition.taskFlow||[]).forEach(st=>{
+    const c=st.runtimeConfig||{};
+    [...(c.skipWhen||[]),...(c.requires||[])].forEach(rule=>{ if(rule.path===name)
+      uses.push(`a rule on the "${st.taskDefinition}" step`); });
+  });
+  (S.definition.executionRules||[]).forEach(rule=>{ if(rule.kind==='data'&&rule.path===name)
+    uses.push('an execution rule'); });
+  return uses;
 }
 
-/* -------------------------------------------------------- data parameters */
 function defData(){
   return `<div style="padding:15px">
     <p style="margin:0 0 12px;color:var(--ink-3);font-size:13px">
-      Fields copied into every new request. <b>Author</b> fields are the requester's and are covered
-      by the approval hash, so changing one dismisses sign-off — and they are frozen while a run is in
-      progress. <b>Execution</b> fields are written by a task's output mapping and sit outside the
-      hash, which is why a run does not dismiss its own approvals.</p>
-    <div class="rows" style="box-shadow:none">
-      ${S.definition.dataParameters.map(p=>`<div class="row" style="cursor:default">
-        <div class="rmain"><div class="rtitle"><strong>${esc(p.label)}</strong>
-          <span class="pill neutral">${p.type}</span>
-          <span class="pill ${p.owner==='EXECUTION'?'warn':'blue'}">${p.owner==='EXECUTION'?'execution':'author'}</span></div>
-          <div class="rmeta"><span class="mono">${esc(p.name)}</span><span class="dot">·</span>
-          <span>default ${esc(String(p.defaultValue))}</span></div></div>
-      </div>`).join('')}
+      Fields copied into every new request. A field is either <b>filled in by the requester</b> —
+      covered by the approval hash, so changing it dismisses sign-off, and frozen while a run is in
+      progress — or <b>written by a task</b> during the run, outside the hash, which is why a run
+      does not dismiss its own approvals.</p>
+    ${S.definition.dataParameters.map((p,j)=>{
+      const uses = dataParamUses(p.name);
+      return `<div class="te-field">
+        <span class="mono" style="min-width:150px" title="The id bindings and rules refer to — fixed once created">${esc(p.name)}</span>
+        <input type="text" data-dp="label" data-j="${j}" value="${esc(p.label)}"
+          placeholder="label" style="width:190px">
+        <select data-dp="type" data-j="${j}" style="width:auto">
+          ${['text','boolean'].map(t=>`<option ${p.type===t?'selected':''}>${t}</option>`).join('')}
+        </select>
+        <select data-dp="owner" data-j="${j}" style="width:auto"
+          title="Who provides the value — the requester by hand, or a task during the run">
+          <option value="AUTHOR" ${p.owner!=='EXECUTION'?'selected':''}>filled in by the requester</option>
+          <option value="EXECUTION" ${p.owner==='EXECUTION'?'selected':''}>written by a task</option>
+        </select>
+        ${p.type==='boolean'
+          ? `<label class="switch" title="Default"><input type="checkbox" data-dp="default" data-j="${j}"
+               ${p.defaultValue?'checked':''}><span class="track"></span><span style="font-size:12px">default</span></label>`
+          : `<input type="text" data-dp="default" data-j="${j}" value="${esc(p.defaultValue??'')}"
+               placeholder="default" style="flex:1;min-width:110px">`}
+        ${uses.length?`<span class="pill neutral" title="${esc(uses.join('; '))}">${uses.length} use${uses.length===1?'':'s'}</span>`:''}
+        <button class="btn sm ico" data-dp="del" data-j="${j}"
+          ${uses.length?'disabled':''}
+          title="${uses.length?`Referenced by ${esc(uses[0])}${uses.length>1?` and ${uses.length-1} more`:''}`:'Remove this field'}">${I.trash}</button>
+      </div>`;
+    }).join('')}
+    <div style="margin-top:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <button class="btn" data-dp="add">${I.plus} Add parameter</button>
+      <span class="hint">New parameters reach <b>new</b> requests; existing requests keep the data
+        they were created with. Moving a field between the two kinds changes what the approval hash
+        covers, so it can dismiss sign-off on open requests.</span>
     </div>
   </div>`;
 }
 
+function dlgAddDataParam(){
+  openModal(`<div class="dialog" role="dialog" aria-modal="true" aria-label="Add data parameter">
+    <div class="dhead"><h2>Add a data parameter</h2>
+      <button class="iconbtn" data-act="close">${I.cross}</button></div>
+    <div class="dbody">
+      <div class="field"><label>Name <span class="req">*</span></label>
+        <input type="text" id="dp-name" placeholder="changeTicket">
+        <span class="hint">The id bindings and rules will refer to — letters and digits, fixed once
+          created.</span></div>
+      <div class="field"><label>Label <span class="req">*</span></label>
+        <input type="text" id="dp-label" placeholder="Change ticket"></div>
+      <div class="field"><label>Type</label>
+        <select id="dp-type"><option>text</option><option>boolean</option></select></div>
+      <div class="field"><label>Owner</label>
+        <select id="dp-owner">
+          <option value="AUTHOR">filled in by the requester</option>
+          <option value="EXECUTION">written by a task</option>
+        </select></div>
+      <div class="field"><label>Default</label>
+        <input type="text" id="dp-default" placeholder=""></div>
+    </div>
+    <div class="dfoot">
+      <button class="btn" data-act="close">Cancel</button>
+      <button class="btn primary" data-dp="create">Add parameter</button>
+    </div>
+  </div>`);
+}
 
 /* ============================ events ============================ */
 function dlgAddStep(){
@@ -389,6 +418,29 @@ function dlgRtImport(){
 }
 
 document.addEventListener('click', e=>{
+  const dp = e.target.closest('[data-dp]');
+  if(dp && (dp.dataset.dp==='add'||dp.dataset.dp==='del'||dp.dataset.dp==='create')){
+    const list = S.definition.dataParameters;
+    if(dp.dataset.dp==='add'){ dlgAddDataParam(); return; }
+    if(dp.dataset.dp==='del'){
+      const p = list[+dp.dataset.j];
+      const uses = dataParamUses(p.name);
+      if(uses.length){ toast(`Referenced by ${uses[0]}${uses.length>1?` and ${uses.length-1} more`:''}`); return; }
+      list.splice(+dp.dataset.j,1); render(); toast('Parameter removed'); return;
+    }
+    /* create */
+    const name = (document.getElementById('dp-name')||{value:''}).value.trim();
+    const label = (document.getElementById('dp-label')||{value:''}).value.trim();
+    const type = (document.getElementById('dp-type')||{value:'text'}).value;
+    const owner = (document.getElementById('dp-owner')||{value:'AUTHOR'}).value;
+    const dflt = (document.getElementById('dp-default')||{value:''}).value.trim();
+    if(!/^[A-Za-z][A-Za-z0-9]*$/.test(name)){ toast('The name must be letters and digits, starting with a letter'); return; }
+    if(list.some(p=>p.name===name)){ toast(`"${name}" already exists`); return; }
+    if(!label){ toast('Give it a label'); return; }
+    list.push({name, label, type, owner,
+      defaultValue: type==='boolean' ? dflt==='true' : dflt});
+    closeModal(); render(); toast('Parameter added'); return;
+  }
   const btn = e.target.closest('[data-rt]');
   if(!btn) return;
   const flow = S.definition.taskFlow;
@@ -445,7 +497,17 @@ document.addEventListener('click', e=>{
 });
 
 document.addEventListener('change', e=>{
-  const el = e.target; const rt = el.dataset.rt; if(!rt) return;
+  const el = e.target;
+  if(el.dataset.dp && el.dataset.j!==undefined){
+    const p = S.definition.dataParameters[+el.dataset.j]; if(!p) return;
+    const k = el.dataset.dp;
+    if(k==='label') p.label = el.value;
+    else if(k==='type'){ p.type = el.value; p.defaultValue = el.value==='boolean' ? false : String(p.defaultValue==null?'':p.defaultValue); }
+    else if(k==='owner') p.owner = el.value;
+    else if(k==='default') p.defaultValue = p.type==='boolean' ? el.checked : el.value;
+    render(); return;
+  }
+  const rt = el.dataset.rt; if(!rt) return;
   const flow = S.definition.taskFlow;
   const i = +el.dataset.i;
   if(rt==='required'){ flow[i].required = el.checked; render(); return; }
