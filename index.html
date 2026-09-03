@@ -1013,7 +1013,10 @@ function taskCard(r,t,locked){
           title="Configure this task" aria-label="Configure this task">${I.gear}</button>
         <button class="btn sm ico" data-act="run-one" data-id="${t.id}"
           ${def.manual||runInFlight(r)?'disabled':''}
-          title="${def.manual?'Manual tasks are closed by a person':t.status==='FAILED'?'Re-run this task':'Run this task on its own'}"
+          title="${def.manual?'Manual tasks are closed by a person'
+            :(missingInputs(def,t,r)[0]
+              ? `Not runnable yet — "${missingInputs(def,t,r)[0].target}" has no value`
+              :t.status==='FAILED'?'Re-run this task':'Run this task on its own')}"
           aria-label="Run this task on its own">${t.status==='FAILED'?I.rerun:I.play}</button>
         <button class="btn sm ico" data-act="show-log" data-id="${t.id}"
           title="Execution log" aria-label="Execution log">${I.log}${logCount?`<span class="n">${logCount}</span>`:''}</button>
@@ -1611,14 +1614,26 @@ async function driveRun(r){
     }
 
     /* Precondition: unlike a gate rule, this cannot be checked before the run
-       starts, because the value it needs may be produced by an earlier step. */
-    const unmet = (t.requires||[]).map(rule=>evaluateRule(rule,r)).filter(x=>!x.satisfied);
-    if(unmet.length){
+       starts, because the value it needs may be produced by an earlier step.
+       Two sources feed it: the step's declared `requires` rules, and — with no
+       configuration at all — any REQUIRED input of the action that resolves to
+       nothing. The action's own contract says what it cannot run without. */
+    const unmetRules = (t.requires||[]).map(rule=>evaluateRule(rule,r)).filter(x=>!x.satisfied);
+    const missing = d.manual ? [] : missingInputs(d,t,r);
+    if(unmetRules.length || missing.length){
+      const unmet = [
+        ...unmetRules.map(x=>({label:x.label, reason:x.reason})),
+        ...missing.map(m=>({label:`Required input "${m.target}" has no value`,
+                            reason:describeSource(m.source)})),
+      ];
+      const needs = [...new Set([
+        ...(t.requires||[]).filter(rule=>!evaluateRule(rule,r).satisfied).map(rule=>rule.path),
+        ...missing.filter(m=>m.source&&m.source.kind==='REQUEST_DATA').map(m=>m.source.path),
+      ])];
       const w = {id:'wi'+(++S.seq), runId:run.id, taskItemId:t.id, kind:'BLOCKER',
         title:`${d.label} cannot start`, roles:['Administrator','NetOps'],
         dueAt:null, state:'OPEN', createdAt:stamp(),
-        unmet:unmet.map(x=>({label:x.label, reason:x.reason})),
-        needs:(t.requires||[]).filter((rule,i)=>!evaluateRule(rule,r).satisfied).map(rule=>rule.path),
+        unmet, needs,
         context:priorOutputs(r,run.cursor), result:null};
       r.workItems.push(w);
       t.status='WAITING';
@@ -1678,7 +1693,12 @@ async function resolveBlocker(id, values){
   const w=r.workItems.find(x=>x.id===id); if(!w||w.state!=='OPEN') return;
   const t=r.taskItems.find(x=>x.id===w.taskItemId);
   Object.entries(values).forEach(([k,v])=>{ if(v!=='') r.data[k]=v; });
-  const still = (t.requires||[]).map(rule=>evaluateRule(rule,r)).filter(x=>!x.satisfied);
+  const tdef = TASK_DEFS[t.def];
+  const still = [
+    ...(t.requires||[]).map(rule=>evaluateRule(rule,r)).filter(x=>!x.satisfied),
+    ...(tdef.manual?[]:missingInputs(tdef,t,r).map(m=>
+        ({label:`required input "${m.target}" still has no value`}))),
+  ];
   if(still.length){
     render(); toast(`Still blocked — ${still[0].label}`); return;
   }
@@ -1771,11 +1791,24 @@ function rejectWorkItem(id,reason){
 async function runSingle(id){
   const r=req();
   const t=r.taskItems.find(x=>x.id===id); if(!t) return;
-  if(TASK_DEFS[t.def].manual){ toast('A manual task is closed by its signer, not dispatched'); return; }
+  const d=TASK_DEFS[t.def];
+  if(d.manual){ toast('A manual task is closed by its signer, not dispatched'); return; }
   const gate=evaluateGate(r);
   if(!gate.canExecute){
     S.gateOpen=true; render();
     toast('The server refused: rules are not satisfied'); return;
+  }
+  /* The same validation the server would run before dispatching: the step's
+     declared preconditions, then the action's own required inputs. Running
+     "send" before "draft" fails here, by name, instead of mailing nothing. */
+  const unmet = (t.requires||[]).map(rule=>evaluateRule(rule,r)).filter(x=>!x.satisfied);
+  if(unmet.length){
+    toast(`The server refused: ${unmet[0].label} — ${unmet[0].reason}`); return;
+  }
+  const missing = missingInputs(d,t,r);
+  if(missing.length){
+    toast(`The server refused: "${missing[0].target}" has no value — ${describeSource(missing[0].source)}`);
+    return;
   }
   await runOneTask(r,t,{by:S.me});
 }

@@ -286,6 +286,15 @@ step, in the same inbox.
 **Why this cannot be a gate rule:** the fingerprint does not exist until the signing step has run.
 Preconditions are the rules that can only be judged once the run is under way.
 
+**And even with no rule configured at all**, a server step cannot run before its inputs exist. The
+action registry declares which parameters are required, so the engine checks what the bindings can
+actually deliver: a run reaching *Send notification* with nothing drafted parks on a blocker naming
+each unproduced input and where it was supposed to come from — *"body" has no value:
+request.notificationBody is written by an earlier step that has not run yet.* The same check guards
+the per-task run button: trying to sign before drafting, or send before anything, is refused by
+name instead of "succeeding" against empty values. The action's own contract does the work; nobody
+has to remember to configure it.
+
 Press **Supply & continue** and provide the value. Note what the dialog says: what you supply is
 recorded as execution output, attributed to you, so it does **not** disturb the approvals already
 given. That is also why the Data tab is frozen during a run — the author-owned fields are what the

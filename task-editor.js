@@ -139,6 +139,33 @@ function resolveInputs(def, t, r){
   (def.inputs||[]).forEach(b=>{ out[b.target] = resolveSource(b.source, t, r); });
   return out;
 }
+/* Which of the action's REQUIRED parameters would resolve to nothing, and where
+   each was supposed to come from. This is the generic "you cannot run this yet":
+   the action's own declared contract, checked against what the bindings can
+   actually deliver right now. No configuration needed. */
+function missingInputs(def, t, r){
+  if(!def || def.kind!=='SERVER') return [];
+  const a = SERVER_ACTIONS[def.action]; if(!a) return [];
+  const inputs = resolveInputs(def, t, r);
+  return a.parameters.filter(p=>p.required).filter(p=>{
+    const v = inputs[p.name];
+    return v===undefined || v===null || String(v).trim()==='';
+  }).map(p=>({target:p.name, source:((def.inputs||[]).find(b=>b.target===p.name)||{}).source||null}));
+}
+/* Where a missing value was supposed to come from, in words a person can act on. */
+function describeSource(src){
+  if(!src) return 'it is not mapped to anything';
+  if(src.kind==='LITERAL') return 'its configured value is empty';
+  if(src.kind==='TASK_PARAM') return `the task field "${src.path}" is empty`;
+  if(src.kind==='REQUEST_DATA'){
+    const p=(typeof S!=='undefined'?S.definition.dataParameters:[]).find(x=>x.name===src.path);
+    return p&&p.owner==='EXECUTION'
+      ? `request.${src.path} is written by an earlier step that has not run yet`
+      : `request.${src.path} is empty`;
+  }
+  return 'its source is unknown';
+}
+
 function hasSource(src){
   if(!src || !src.kind) return false;
   if(src.kind==='LITERAL') return src.value!==undefined && src.value!=='';
