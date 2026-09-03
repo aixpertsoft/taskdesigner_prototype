@@ -101,12 +101,14 @@ stand-in hash rather than SHA-256, and no mail leaves your browser.
 **Not present** — persistence, authentication, notifications, and timeouts. A run pauses on a manual
 step and resumes by itself, but everything happens inside one browser tab.
 
-### One deliberate rough edge
+### The most important correction
 
-*Execute this task* on an individual task card stays clickable even when the gate is red, and tells
-you the server refused. That is not a bug. It demonstrates that the gate lives on the server, not in
-the button's `disabled` attribute — which is the single most important correction this design makes
-to the original requirements document.
+The gate lives on the server, not in the Execute button's `disabled` attribute — the original
+requirements document gated execution in the UI only, which is not an approval control, because
+anyone able to call the API bypasses it. The prototype's run engine re-evaluates the full rule set
+when a run starts and refuses with the failing rule named; in the real system the bypass test —
+calling `POST /execute` directly with the gate red and getting `403 RULE_NOT_SATISFIED` — is the
+single most important assertion in the POC.
 
 ---
 

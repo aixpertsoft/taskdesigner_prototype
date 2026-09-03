@@ -84,7 +84,13 @@ what is proposed, who has signed off, what is still objected to, and a button th
 the conditions are met.
 
 **Task cards** carry the step, its status, the settings it was configured with, and a small row of
-actions. A manual step also shows who it is waiting for.
+actions — the execution log and remove; nothing more. A manual step also shows who it is waiting for.
+
+**Task settings are fixed at creation.** Template steps take their values from the request type's
+flow defaults; an ad-hoc task is initialised once, in the form shown when it is added. There is no
+edit-in-place afterwards — changing your mind means remove and re-add, which moves the plan's
+fingerprint and dismisses approvals, exactly as an edit should. The requester's job is deliberately
+small: raise the request, do their manual steps, approve.
 
 **The approvals rail** shows every eligible approver and their state. The requester appears greyed
 out — you cannot approve your own request, which is `excludeRequester` on the rule, not a hard-coded
@@ -110,10 +116,17 @@ This request type has two rules: **one Administrator approval, not the requester
 unresolved change requests**. Both are editable on the *Request types* screen — change the approval
 count and the bar responds immediately.
 
-**The rules run on the server, not in the button.** *Execute this task* on an individual card stays
-clickable when the gate is red and reports that the server refused. That is deliberate: the original
-design gated execution in the UI only, which is not an approval control, because anyone able to call
-the API bypasses it.
+**The rules run on the server, not in the button.** Starting a run re-evaluates every rule and a
+refusal names the failing rule and its tally: *"1 approval from Administrator (not the requester) —
+0 of 1 so far."* That mirrors the specification, where a `RULE_NOT_SATISFIED` refusal carries the
+full gate result in its details: the server decides, but it also explains, and the client renders
+what it was sent. The original design gated execution in the UI only, which is not an approval
+control, because anyone able to call the API bypasses it.
+
+**And there is deliberately no way to run one task by hand.** Execution happens only through a run,
+which walks the flow in order, honours skips and preconditions, and validates each action's required
+inputs. Retrying a failed step is simply *Execute all* again — a new run skips what already
+succeeded and picks up where it failed.
 
 ---
 
@@ -124,7 +137,7 @@ a person closes it — with an assignee, the payload they need to see, and a res
 
 Three things are worth pointing at while a run is parked:
 
-- **The plan is frozen.** *Configure*, *Add task* and *Remove* are all disabled. A run is bound to
+- **The plan is frozen.** *Add task* and *Remove* are disabled. A run is bound to
   the fingerprint it started on; if step 4 could be edited while steps 1–2 are already done, the hash
   would move, approvals would be dismissed, and half a plan would have executed under terms nobody
   approved.

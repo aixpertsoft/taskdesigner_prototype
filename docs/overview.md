@@ -71,9 +71,10 @@ the hard one.
 
 The original document described gating the Execute button in the UI. That is not an approval control
 — anyone able to call the API would bypass every rule. The server re-evaluates the full rule set
-before dispatching anything; the button's state is a rendering hint. The prototype demonstrates this
-deliberately: *Execute this task* stays clickable when the gate is red and reports that the server
-refused.
+before dispatching anything; the button's state is a rendering hint. The prototype mirrors this:
+starting a run re-evaluates every rule and refuses with the failing rule named, and the POC's most
+important assertion is the bypass test — `POST /execute` called directly with the gate red must
+return `403 RULE_NOT_SATISFIED`.
 
 ### Rules are structured data, not code
 

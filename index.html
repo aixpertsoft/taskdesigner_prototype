@@ -720,6 +720,18 @@ function evaluateRule(rule,r){
     default: return {label:rule.kind, satisfied:false, reason:'unknown rule'};
   }
 }
+/* Why the gate said no, in one sentence. The prototype's stand-in for the
+   GateDTO the real server returns inside a RULE_NOT_SATISFIED refusal — the
+   server decides, but it also explains, and the client renders what it sent. */
+function gateRefusal(r, gate){
+  if(r.status==='ARCHIVED'||r.status==='REJECTED') return `the request is ${r.status}`;
+  if(gate.noTasks) return 'a request needs at least one task';
+  const failing = gate.rules.filter(x=>!x.satisfied);
+  if(!failing.length) return 'rules are not satisfied';
+  return `${failing[0].label} — ${failing[0].reason}`
+       + (failing.length>1?` (and ${failing.length-1} more, see the checklist)`:'');
+}
+
 function evaluateGate(r){
   const rules = S.definition.executionRules.map(rule=>evaluateRule(rule,r));
   const noTasks = r.taskItems.length===0;
@@ -1009,15 +1021,6 @@ function taskCard(r,t,locked){
           </div></div>`:''}
       </div>
       <div class="task-acts">
-        <button class="btn sm ico" data-act="config-task" data-id="${t.id}" ${locked?'disabled':''}
-          title="Configure this task" aria-label="Configure this task">${I.gear}</button>
-        <button class="btn sm ico" data-act="run-one" data-id="${t.id}"
-          ${def.manual||runInFlight(r)?'disabled':''}
-          title="${def.manual?'Manual tasks are closed by a person'
-            :(missingInputs(def,t,r)[0]
-              ? `Not runnable yet — "${missingInputs(def,t,r)[0].target}" has no value`
-              :t.status==='FAILED'?'Re-run this task':'Run this task on its own')}"
-          aria-label="Run this task on its own">${t.status==='FAILED'?I.rerun:I.play}</button>
         <button class="btn sm ico" data-act="show-log" data-id="${t.id}"
           title="Execution log" aria-label="Execution log">${I.log}${logCount?`<span class="n">${logCount}</span>`:''}</button>
         <button class="btn sm ico" data-act="del-task" data-id="${t.id}"
@@ -1294,15 +1297,17 @@ function dlgBlocker(workItemId){
     </div>
   </div>`);
 }
-function dlgConfigTask(defName, taskId, at){
+/* The one-time form shown when a task is ADDED. There is no editing afterwards:
+   template steps take their values from the request type's flow defaults, and an
+   ad-hoc task is initialised here, once. Changing your mind means remove and
+   re-add — which moves the hash and dismisses approvals, as an edit should. */
+function dlgConfigTask(defName, at){
   const def = TASK_DEFS[defName];
-  const r = req();
-  const t = taskId ? r.taskItems.find(x=>x.id===taskId) : null;
-  const cfg = t ? {...t.config} : {};
-  openModal(`<div class="dialog" role="dialog" aria-modal="true" aria-label="Configure task">
+  const cfg = {};
+  openModal(`<div class="dialog" role="dialog" aria-modal="true" aria-label="Add task">
     <div class="dhead">
       <span style="color:var(--accent)">${def.icon}</span>
-      <h2>${t?'Configure':'Add'} — ${esc(def.label)}</h2>
+      <h2>Add — ${esc(def.label)}</h2>
       <button class="iconbtn" data-act="close">${I.cross}</button>
     </div>
     <div class="dbody">
@@ -1329,17 +1334,14 @@ function dlgConfigTask(defName, taskId, at){
         }).join('');
       })()}
       <div style="font-size:12px;color:var(--ink-3);border-top:1px solid var(--border);padding-top:11px">
-        This form is generated from what the server declares about the task — adding a new kind of task
-        needs no new screen.
-        ${t&&r.approvals.length?`<div style="margin-top:7px;color:var(--warn)">
-          ${I.warn} Changing anything here dismisses the ${r.approvals.length} approval(s) already given.</div>`:''}
+        This form is generated from what the server declares about the task, and it is the only time
+        these values are asked for — task settings are fixed once the task is in the plan.
       </div>
     </div>
     <div class="dfoot">
       <button class="btn" data-act="close">Cancel</button>
-      <button class="btn primary" data-act="save-task" data-def="${defName}" data-id="${taskId||''}"
-        data-at="${at===undefined?'':at}">
-        ${t?'Save changes':'Add task'}</button>
+      <button class="btn primary" data-act="save-task" data-def="${defName}"
+        data-at="${at===undefined?'':at}">Add task</button>
     </div>
   </div>`);
 }
@@ -1584,7 +1586,7 @@ function startRun(){
   /* The server re-evaluates the gate; the button state is only a hint. */
   if(!gate.canExecute){
     S.gateOpen=true; render();
-    toast('The server refused: rules are not satisfied'); return;
+    toast(`The server refused: ${gateRefusal(r,gate)}`); return;
   }
   if(runInFlight(r)){ toast('A run is already in progress'); return; }
   r.run = {id:'run'+(++S.seq), state:'RUNNING', cursor:0, hash:gate.hash,
@@ -1786,32 +1788,11 @@ function rejectWorkItem(id,reason){
   toast('Sent back to the requester — nothing was marked failed');
 }
 
-/* Ad-hoc dispatch of one task, outside a run. Deliberately still clickable when
-   the gate is red, so the server refusing it stays visible. */
-async function runSingle(id){
-  const r=req();
-  const t=r.taskItems.find(x=>x.id===id); if(!t) return;
-  const d=TASK_DEFS[t.def];
-  if(d.manual){ toast('A manual task is closed by its signer, not dispatched'); return; }
-  const gate=evaluateGate(r);
-  if(!gate.canExecute){
-    S.gateOpen=true; render();
-    toast('The server refused: rules are not satisfied'); return;
-  }
-  /* The same validation the server would run before dispatching: the step's
-     declared preconditions, then the action's own required inputs. Running
-     "send" before "draft" fails here, by name, instead of mailing nothing. */
-  const unmet = (t.requires||[]).map(rule=>evaluateRule(rule,r)).filter(x=>!x.satisfied);
-  if(unmet.length){
-    toast(`The server refused: ${unmet[0].label} — ${unmet[0].reason}`); return;
-  }
-  const missing = missingInputs(d,t,r);
-  if(missing.length){
-    toast(`The server refused: "${missing[0].target}" has no value — ${describeSource(missing[0].source)}`);
-    return;
-  }
-  await runOneTask(r,t,{by:S.me});
-}
+/* There is deliberately NO way to run one task by hand. Execution happens only
+   through a run, which walks the flow in order, honours skip rules and
+   preconditions, and validates each action's required inputs before dispatch.
+   Retrying a failed step is Execute all again: a new run skips what already
+   succeeded and picks up where it failed. */
 
 /* Ending a parked run is the requester's or an administrator's call, never the
    signer's — otherwise "sign or nothing" is defeated by cancelling instead. */
@@ -1888,23 +1869,16 @@ document.addEventListener('click', e=>{
     }
 
     case 'add-task':    dlgAddTask(+(btn.dataset.at ?? r.taskItems.length)); break;
-    case 'pick-task':   dlgConfigTask(btn.dataset.def, null, +btn.dataset.at); break;
+    case 'pick-task':   dlgConfigTask(btn.dataset.def, +btn.dataset.at); break;
     case 'do-unblock':{
       const values = {};
       document.querySelectorAll('#modal [data-p]').forEach(el=>{ values[el.dataset.p]=el.value.trim(); });
       resolveBlocker(btn.dataset.id, values); break;
     }
-    case 'config-task':{
-      const t=r.taskItems.find(x=>x.id===btn.dataset.id);
-      dlgConfigTask(t.def, t.id); break;
-    }
     case 'save-task':{
-      const defName=btn.dataset.def, id=btn.dataset.id;
+      const defName=btn.dataset.def;
       const def=TASK_DEFS[defName];
-      const existing = id ? r.taskItems.find(x=>x.id===id) : null;
-      /* Start from what the task already has, so hidden and readonly fields —
-         which the form never rendered — survive the save instead of vanishing. */
-      const cfg = existing ? {...existing.config} : {};
+      const cfg = {};
       document.querySelectorAll('#modal [data-p]').forEach(el=>{
         if(el.disabled || el.readOnly) return;
         cfg[el.dataset.p]=el.value.trim();
@@ -1920,19 +1894,7 @@ document.addEventListener('click', e=>{
         toast(`${unfixable} has no value, and it is not editable here — give it a default on the request type`);
         break;
       }
-      if(id){
-        const t=r.taskItems.find(x=>x.id===id);
-        const before=taskConfigHash(r);
-        t.config=cfg;
-        const after=taskConfigHash(r);
-        if(before!==after){
-          if(t.status!=='NOT_RUN'){ t.status='NOT_RUN'; t.error=null; }
-          const dismissed=r.approvals.filter(a=>a.hash===before).length;
-          note(r,`changed the ${def.label} task configuration`);
-          if(dismissed) toast(`${dismissed} approval(s) dismissed — the task changed`);
-          else toast('Task updated');
-        }
-      }else{
+      {
         /* Ad-hoc tasks are never `required` — only steps that came from the flow are. */
         const at = btn.dataset.at==='' ? r.taskItems.length
                  : Math.max(0, Math.min(r.taskItems.length, +btn.dataset.at));
@@ -1954,7 +1916,6 @@ document.addEventListener('click', e=>{
     case 'show-submission': dlgSubmission(btn.dataset.id); break;
 
     case 'run-all': startRun(); break;
-    case 'run-one': runSingle(btn.dataset.id); break;
     case 'cancel-run': cancelRun(); break;
     case 'sign':{
       const w = r.workItems.find(x=>x.id===btn.dataset.id);

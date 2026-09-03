@@ -165,7 +165,9 @@ function flowStep(step,i){
           const v = (step.defaults||{})[p.name] ?? '';
           const flag = p.hidden   ? ' <span class="pill warn">hidden</span>'
                      : p.readonly ? ' <span class="pill neutral">fixed</span>' : '';
-          const warn = (p.required && !v && (p.hidden||p.readonly))
+          /* Task settings are fixed at creation, so a template step's required
+             fields can ONLY come from these defaults. */
+          const warn = (p.required && !v)
             ? `<span class="hint" style="color:var(--bad)">Required, and the requester cannot set
                 it — give it a value here.</span>` : '';
           if(p.type==='enum') return `<div class="field"><label>${esc(p.label)}${flag}</label>
