@@ -199,22 +199,98 @@ return. **Export JSON** on the list screen hands you exactly that.
 
 ---
 
-## Request types — the admin side
+## Request types — where the process is defined
+
+### Task flow
+
+The four steps are not something the requester assembled. They are the **task flow** on the request
+type: an ordered template, instantiated when a request is created. Raise a new request and the whole
+process is already there.
+
+Each step carries:
+
+| | |
+| --- | --- |
+| **required** | The requester cannot remove it. On a task card it shows as a *step* badge and the delete button is disabled. |
+| **defaults** | Pre-filled into the task item — the sender address, who signs, the due date. Still editable per request. |
+| **skipWhen** | Evaluated once, when the run reaches the step. If it matches, the step is recorded **skipped** and the run carries straight on. |
+| **requires** | Checked at run time. If unsatisfied the run parks on a **blocker** until somebody supplies what is missing. |
+
+**The flow is linear on purpose.** Steps run in order and a step may be skipped; there is no
+branching, no parallelism, no loops. That is the line between this and `de.comconsult.wf` — a
+conditional skip is a one-armed router, and one arm is all this subsystem should grow. The moment
+"if X do A else do B" appears, you are rebuilding the engine the overview says this does not replace.
+
+**Editing the template does not touch requests already raised.** A request snapshots its steps —
+including their rules — at creation. Same reasoning as `definitionVersion` in the specification.
+
+### Try the skip
+
+Tick **Skip the approval step** on the Data tab. Two things happen:
+
+1. **Your approval is dismissed.** That flag is inside the approval hash, so changing it invalidates
+   sign-off — exactly like editing a task does. Without that, you could get approval, then set the
+   flag, then execute, and the approval step would vanish with nothing invalidated. That is
+   approve-then-edit-then-execute wearing a different hat.
+2. Re-approve, execute, and step 3 is marked **skipped**. Not done, not failed — skipped, with the
+   reason, in the log.
+
+### Try the blocker
+
+Give the signing step a skip rule too, so no fingerprint is ever produced. Execute: the run reaches
+*Send notice*, finds its precondition unmet, and **parks on a blocker** — the same pause as a manual
+step, in the same inbox.
+
+**Why this cannot be a gate rule:** the fingerprint does not exist until the signing step has run.
+Preconditions are the rules that can only be judged once the run is under way.
+
+Press **Supply & continue** and provide the value. Note what the dialog says: what you supply is
+recorded as execution output, attributed to you, so it does **not** disturb the approvals already
+given. That is also why the Data tab is frozen during a run — the author-owned fields are what the
+approvals cover, so a blocker collects its values through the work item instead.
+
+### The rest of the screen
 
 **Status workflow** — the transition graph, with the roles allowed on each arrow. In the real
 implementation this is the existing `ProjectStatusTransitionsDef` React Flow editor, not a new one.
 
-**Allowed tasks** — which task types may be added to a request of this type.
+**Data parameters** — every field is either **author** (the requester's; inside the hash; frozen
+during a run) or **execution** (written by a task's output mapping; outside the hash, which is why a
+run does not dismiss its own approvals).
 
-**Data parameters** — fields copied into every new request. Note the split between author-owned and
-execution-written; the `data` rule arm needs the types, which is why they are typed rather than
-free name/value pairs.
+**Execution rules** — these gate the *whole run* before it starts, and can be added and removed.
+There are two types, and deliberately only two:
 
-**Execution rules** — editable, and the gate responds immediately.
+| | |
+| --- | --- |
+| **Minimum approvals from a role** | N people holding a given role must approve. Roles are picked as chips; *not the requester* is a toggle. |
+| **No open change requests** | Nothing raised in the conversation may still be unresolved. Only one of these is offered, since a second would say nothing new. |
+
+A step's own skip and precondition rules live on the **Task flow** instead, because those can only be
+judged once the run is under way.
+
+**Remove the approvals rule and the approvals rail disappears** from the request editor, the layout
+closes up, and the *Awaiting my approval* inbox tab is hidden — there is nobody to show, and drawing
+an empty panel would invent a step the process does not have. Add it back and everything returns.
+
+One nuance worth knowing: an approval binds to the **plan and the author data**, not to the request
+type's rules. So removing and re-adding an approvals rule does not dismiss sign-off already given —
+the plan never changed. Changing the *quorum*, on the other hand, re-evaluates the gate immediately.
+Whether a rule edit should invalidate in-flight requests is the `definitionVersion` question in
+[the specification](specification.md), which the prototype does not model.
 
 **Why the rules are structured, not code:** the original document proposed "boolean typescript
 expressions". Both examples it named are structured predicates, and free-text JS contradicts a
 written decision already taken in this codebase. See [the rules section](specification.md#rules).
+Step rules reuse the same `TaskRule` shape as gate rules — there is no second rule engine.
+
+### It is all JSON
+
+**Export JSON** on this screen hands you the whole request type — flow, defaults, step rules, data
+parameters and gate rules — as [`request-types.json.js`](../request-types.json.js) holds it. Strip
+the assignment line and the remainder is a valid `.json` document, the one `GET /taskrequestdefs`
+would return. **Import JSON** takes one back, refusing an `apiVersion` it does not recognise rather
+than guessing at the shape.
 
 ---
 
@@ -241,9 +317,17 @@ Java `RuleEvaluator` tests.
 the cursor, the park on a manual task, and the resume-on-completion are the server's `drive()` loop
 in the specification. In the real implementation they live in Java, not the client.
 
-The three-file split is deliberate and worth preserving in shape:
-`task-definitions.json.js` is data, `task-editor.js` owns the definition model and its editor, and
-`index.html` is only a consumer.
+The file split is deliberate and worth preserving in shape — data files hold no logic, editors own
+their model, and `index.html` is only a consumer:
+
+| File | Owns |
+| --- | --- |
+| `task-definitions.json.js` | the task catalogue, as data |
+| `request-types.json.js` | the request types and their task flows, as data |
+| `task-editor.js` | the task-definition model, the binding resolver, the Task types screen |
+| `request-type-editor.js` | the Request types screen, including the task flow editor |
+| `execution-rules-editor.js` | the gate rules — the two rule types, and adding/removing them |
+| `index.html` | requests, approvals, the run engine — a consumer of both catalogues |
 
 The render functions are throwaway: the real implementation is React and MUI on the existing designer
 shell.

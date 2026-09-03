@@ -218,6 +218,7 @@ input[type=text]:focus,select:focus,textarea:focus{border-color:var(--accent);ou
 .rq-actions{display:flex;gap:8px;align-items:center;margin-left:auto}
 
 .rq-body{display:grid;grid-template-columns:minmax(0,1fr) 296px;gap:20px;align-items:start}
+.rq-body.norail{grid-template-columns:minmax(0,1fr)}
 @media (max-width:900px){.rq-body{grid-template-columns:1fr}}
 
 /* task cards */
@@ -256,6 +257,18 @@ input[type=text]:focus,select:focus,textarea:focus{border-color:var(--accent);ou
   color:var(--ink-3)}
 
 .addbar{margin-top:12px}
+/* Insert points between steps — quiet until you go near them. */
+.insert{height:0;display:flex;justify-content:center;position:relative;z-index:1}
+.insert button{
+  width:22px;height:22px;margin-top:-11px;border-radius:50%;padding:0;
+  border:1px solid var(--border);background:var(--surface);color:var(--ink-3);
+  display:grid;place-items:center;cursor:pointer;opacity:0;transition:opacity .12s;
+}
+.tasklist:hover .insert button{opacity:.55}
+.insert button:hover,.insert button:focus-visible{opacity:1;border-color:var(--accent);
+  background:var(--accent-soft);color:var(--accent)}
+.databar{display:flex;gap:9px;align-items:center;padding:9px 13px;font-size:12.5px;
+  background:var(--warn-soft);border-bottom:1px solid var(--warn-line);color:var(--warn)}
 
 /* right rail */
 .rail{display:grid;gap:12px;position:sticky;top:72px}
@@ -519,7 +532,30 @@ let S;
    before planned maintenance. Four steps — a person drafts it, the server
    fingerprints the exact wording, an administrator approves that wording, the
    server sends it and records what the mail server answered. */
+
+/* Creating a request instantiates the request type's task flow. The step's rules
+   are copied onto the task item, not referenced: a request is bound to the flow
+   as it was when it was raised, and editing the template later must not change
+   what an in-flight request will do. Same reasoning as definitionVersion. */
+function instantiateFlow(definition, seqBase){
+  let n = seqBase;
+  const copy = x => JSON.parse(JSON.stringify(x));
+  return (definition.taskFlow||[]).map(step=>({
+    id:'ti'+(++n), def:step.taskDefinition, stepId:step.stepId, required:!!step.required,
+    status:'NOT_RUN', attempts:0,
+    config:copy(step.defaults||{}),
+    skipWhen:copy(step.skipWhen||[]),
+    requires:copy(step.requires||[]),
+  }));
+}
 function seed(){
+  /* The request type comes from request-types.json.js — the document the server
+     would return from GET /taskrequestdefs. Its taskFlow is the ordered template
+     a new request is instantiated from. */
+  const definition = currentRequestType();
+  const data = {};
+  definition.dataParameters.forEach(p=>{ data[p.name] = p.defaultValue; });
+
   return {
     me:'mb',
     screen:'inbox',
@@ -527,51 +563,21 @@ function seed(){
        to the starting user, so an approval-filtered inbox would open empty. */
     inboxTab:'open',
     requestTab:'tasks',
-    defSection:'workflow',
+    defSection:'flow',
+    flowOpen:null,
     openRequestId:'TR-2087',
     tipOpen:false, tipSeen:false, gateOpen:false,
     seq:6,
-    definition:{
-      id:'maintenance-notification', name:'Maintenance Notification', onError:'STOP',
-      rules:[
-        {kind:'approvals', min:1, roles:['Administrator'], excludeRequester:true},
-        {kind:'noUnresolvedChangeRequests'},
-      ],
-      dataParameters:[
-        /* Filled in by the author when the request is raised. */
-        {name:'window', label:'Maintenance window', type:'text',
-         defaultValue:'12.09.2026, 22:00–23:30 CEST'},
-        {name:'affected', label:'Affected system', type:'text',
-         defaultValue:'Rack R12 — uplink switch SW-01'},
-        /* Written by the run, never by hand. Watch these fill in as it executes. */
-        {name:'noticeSubject', label:'Notice subject', type:'text', defaultValue:''},
-        {name:'noticeBody', label:'Notice text', type:'text', defaultValue:''},
-        {name:'recipients', label:'Recipients', type:'text', defaultValue:''},
-        {name:'sha256', label:'Fingerprint (SHA-256)', type:'text', defaultValue:''},
-        {name:'signedAt', label:'Signed at', type:'text', defaultValue:''},
-        {name:'approvalNote', label:'Approver comment', type:'text', defaultValue:''},
-        {name:'sendStatus', label:'Delivery status', type:'text', defaultValue:''},
-        {name:'messageId', label:'Message id', type:'text', defaultValue:''},
-      ],
-    },
+    definition,
     requests:[
       {
         id:'TR-2087', name:'Notify customers — R12 uplink switch replacement',
         requester:'mb', status:'OPEN',
         createdAt:'03.09.2026 09:14', version:3,
-        data:{window:'12.09.2026, 22:00–23:30 CEST', affected:'Rack R12 — uplink switch SW-01',
-              noticeSubject:'', noticeBody:'', recipients:'', sha256:'', signedAt:'',
-              approvalNote:'', sendStatus:'', messageId:''},
-        taskItems:[
-          {id:'ti1', def:'draftNotice', status:'NOT_RUN', attempts:0, config:{
-            assignedRole:'NetOps', dueBy:'11.09.2026', onRefusal:'Send back'}},
-          {id:'ti2', def:'signNotice', status:'NOT_RUN', attempts:0, config:{
-            signedBy:'AixBOMS Change Management'}},
-          {id:'ti3', def:'approveNotice', status:'NOT_RUN', attempts:0, config:{
-            assignedRole:'Administrator', dueBy:'12.09.2026', onRefusal:'Send back'}},
-          {id:'ti4', def:'sendNotice', status:'NOT_RUN', attempts:0, config:{
-            fromAddress:'change@aixpertsoft.de'}},
-        ],
+        data,
+        /* Instantiated from the flow, exactly as a new request would be — so the
+           seed cannot drift from the template it claims to come from. */
+        taskItems:instantiateFlow(definition, 0),
         approvals:[
           {id:'a1', user:'kw', decision:'APPROVED', at:'03.09.2026 09:41', hash:null},
         ],
@@ -608,8 +614,32 @@ function fnv(str){
   }
   return (h1.toString(16)+h2.toString(16)).padStart(12,'0').slice(0,12);
 }
-function taskConfigHash(items){
-  return fnv(JSON.stringify(items.map(t=>({d:t.def,c:t.config}))));
+/* What an approval is bound to.
+
+   Task configs alone are not enough once a step can be skipped by a data flag:
+   approve, set skipApproval, execute, and the approval step vanishes without
+   anything being invalidated — approve-then-edit-then-execute wearing a hat.
+   So the hash covers the plan AND the author-owned data.
+
+   Execution-written fields are excluded, or a run would dismiss its own
+   approvals the moment a task stored an output. */
+function authorData(r){
+  const out = {};
+  (S.definition.dataParameters||[])
+    .filter(p=>p.owner!=='EXECUTION')
+    .forEach(p=>{ out[p.name] = r.data[p.name]; });
+  return out;
+}
+function taskConfigHash(r){
+  const items = (r.taskItems||[]).map(t=>({d:t.def, c:t.config, s:t.skipWhen, q:t.requires}));
+  return fnv(JSON.stringify({tasks:items, data:authorData(r)}));
+}
+
+/* Does this request type require approval at all? If not, there is no approvals
+   rail to draw and no "awaiting my approval" inbox to fill — showing either would
+   be inventing a step the process does not have. */
+function requiresApprovals(){
+  return (S.definition.executionRules||[]).some(x=>x.kind==='approvals');
 }
 
 /* A run is in flight while it is working or parked on a work item. */
@@ -632,7 +662,7 @@ function toast(msg){
 /* ============================ rule engine ============================ */
 /* Mirrors evaluateRule() from the specification, reasons included. */
 function evaluateRule(rule,r){
-  const hash = taskConfigHash(r.taskItems);
+  const hash = taskConfigHash(r);
   switch(rule.kind){
     case 'approvals':{
       const roles = rule.roles||[];
@@ -670,11 +700,11 @@ function evaluateRule(rule,r){
   }
 }
 function evaluateGate(r){
-  const rules = S.definition.rules.map(rule=>evaluateRule(rule,r));
+  const rules = S.definition.executionRules.map(rule=>evaluateRule(rule,r));
   const noTasks = r.taskItems.length===0;
   return {
     rules,
-    hash: taskConfigHash(r.taskItems),
+    hash: taskConfigHash(r),
     noTasks,
     canExecute: !noTasks && rules.every(x=>x.satisfied) && r.status!=='ARCHIVED' && r.status!=='REJECTED',
   };
@@ -715,6 +745,10 @@ function tipPanel(){
       <li>Watch the <b>Data</b> tab fill in as it goes: subject, text, fingerprint, delivery status.</li>
       <li>To see a failure, put an address at <span class="mono">@invalid.example</span> in the
         recipients.</li>
+      <li>Tick <b>Skip the approval step</b> on the Data tab — your approval is dismissed, because
+        that flag is now inside the hash. Re-approve, execute, and step 3 is <i>skipped</i>.</li>
+      <li><b>Request types → Task flow</b> is where those four steps come from. A new request is
+        created with the whole process already in it.</li>
     </ol>
     <div class="tipfoot">Everything runs in your browser. The approval rules, the frozen plan and the
       execution gate are the real logic from the specification — Execute is genuinely blocked until
@@ -731,10 +765,11 @@ function inboxFilter(){
     return S.requests.filter(r=>myWorkItems(r,m).length>0);
   }
   if(S.inboxTab==='awaiting'){
+    if(!requiresApprovals()) return [];
     return S.requests.filter(r=>{
       if(r.requester===m) return false;
       if(r.status!=='OPEN') return false;
-      const hash=taskConfigHash(r.taskItems);
+      const hash=taskConfigHash(r);
       return !r.approvals.some(a=>a.user===m && a.hash===hash);
     });
   }
@@ -743,6 +778,8 @@ function inboxFilter(){
   return S.requests;
 }
 function viewInbox(){
+  /* If the tab we are on has just been hidden, fall back rather than showing nothing. */
+  if(S.inboxTab==='awaiting' && !requiresApprovals()) S.inboxTab='open';
   const counts = {
     awaiting: (()=>{const t=S.inboxTab; S.inboxTab='awaiting'; const n=inboxFilter().length; S.inboxTab=t; return n;})(),
     action:   S.requests.reduce((n,r)=>n+myWorkItems(r,S.me).length,0),
@@ -761,7 +798,7 @@ function viewInbox(){
   <div class="tabs" role="tablist">
     <button role="tab" aria-selected="${S.inboxTab==='action'}"   data-tab="action">Awaiting my action
       ${counts.action?`<span class="pill warn">${counts.action}</span>`:`<span class="count">0</span>`}</button>
-    <button role="tab" aria-selected="${S.inboxTab==='awaiting'}" data-tab="awaiting">Awaiting my approval <span class="count">${counts.awaiting}</span></button>
+    ${requiresApprovals()?`<button role="tab" aria-selected="${S.inboxTab==='awaiting'}" data-tab="awaiting">Awaiting my approval <span class="count">${counts.awaiting}</span></button>`:''}
     <button role="tab" aria-selected="${S.inboxTab==='mine'}"     data-tab="mine">My requests <span class="count">${counts.mine}</span></button>
     <button role="tab" aria-selected="${S.inboxTab==='open'}"     data-tab="open">All open <span class="count">${counts.open}</span></button>
     <button role="tab" aria-selected="${S.inboxTab==='all'}"      data-tab="all">Everything <span class="count">${S.requests.length}</span></button>
@@ -772,8 +809,8 @@ function viewInbox(){
 function inboxRow(r){
   const gate = evaluateGate(r);
   const failed = r.taskItems.filter(t=>t.status==='FAILED').length;
-  const appr = S.definition.rules.find(x=>x.kind==='approvals');
-  const hash = taskConfigHash(r.taskItems);
+  const appr = S.definition.executionRules.find(x=>x.kind==='approvals');
+  const hash = taskConfigHash(r);
   const good = r.approvals.filter(a=>a.decision==='APPROVED'&&a.hash===hash).length;
   const openCr = r.changeRequests.filter(c=>!c.resolved).length;
   const mine = myWorkItems(r,S.me).length;
@@ -838,16 +875,14 @@ function viewRequest(){
     <button role="tab" aria-selected="${S.requestTab==='hist'}"  data-rtab="hist">History <span class="count">${r.history.length}</span></button>
   </div>
 
-  <div class="rq-body">
+  <div class="rq-body ${requiresApprovals()?"":"norail"}">
     <div>
       ${S.requestTab==='tasks' ? paneTasks(r,gate)
        :S.requestTab==='talk'  ? paneTalk(r)
        :S.requestTab==='data'  ? paneData(r)
        :                         paneHist(r)}
     </div>
-    <aside class="rail">
-      ${panelApprovals(r,gate)}
-    </aside>
+    ${requiresApprovals()?`<aside class="rail">${panelApprovals(r,gate)}</aside>`:''}
   </div>`;
 }
 
@@ -855,31 +890,42 @@ function paneTasks(r,gate){
   /* A run in flight freezes the plan: the hash it is executing must not move
      under it, or half a plan runs under terms nobody approved. */
   const locked = r.status==='ARCHIVED'||r.status==='REJECTED'||runInFlight(r);
+  /* An insert point between every pair of steps, so an extra task can go where it
+     belongs in the sequence rather than only at the end. */
+  const gap = i => locked ? '' :
+    `<div class="insert"><button data-act="add-task" data-at="${i}"
+       title="Insert a task here">${I.plus}</button></div>`;
   return `<div class="tasklist">
-    ${r.taskItems.length? r.taskItems.map(t=>taskCard(r,t,locked)).join('')
+    ${r.taskItems.length
+      ? r.taskItems.map((t,i)=>gap(i)+taskCard(r,t,locked)).join('') + gap(r.taskItems.length)
       : `<div class="empty">No tasks yet. A request needs at least one task before it can be executed.</div>`}
   </div>
   <div class="addbar">
-    <button class="btn" data-act="add-task" ${locked?'disabled':''}>${I.plus} Add task</button>
+    <button class="btn" data-act="add-task" data-at="${r.taskItems.length}" ${locked?'disabled':''}>${I.plus} Add task at the end</button>
   </div>
   ${gateBox(r,gate)}`;
 }
 function taskCard(r,t,locked){
   const def = TASK_DEFS[t.def];
-  const tone = {NOT_RUN:'neutral',RUNNING:'blue',WAITING:'warn',SUCCEEDED:'ok',FAILED:'bad'}[t.status];
+  const tone = {NOT_RUN:'neutral',RUNNING:'blue',WAITING:'warn',SUCCEEDED:'ok',FAILED:'bad',
+                SKIPPED:'neutral'}[t.status];
   const label= {NOT_RUN:'not run',RUNNING:'running…',WAITING:'waiting for a person',
-                SUCCEEDED:'succeeded',FAILED:'failed'}[t.status];
+                SUCCEEDED:'succeeded',FAILED:'failed',SKIPPED:'skipped'}[t.status];
   const taskLogs = r.logs.filter(l=>l.taskId===t.id);
   const last = taskLogs.slice(-1)[0];
   const logCount = taskLogs.length;
-  const w = (r.workItems||[]).find(x=>x.taskItemId===t.id && x.state==='OPEN');
+  const open = (r.workItems||[]).find(x=>x.taskItemId===t.id && x.state==='OPEN');
+  const w = open && open.kind!=='BLOCKER' ? open : null;
+  const blocker = open && open.kind==='BLOCKER' ? open : null;
   const canSign = w && w.roles.some(ro=>hasRole(S.me,ro));
+  const canClear = blocker && blocker.roles.some(ro=>hasRole(S.me,ro));
   return `<article class="task ${t.status==='FAILED'?'failed':''} ${t.status==='WAITING'?'waiting':''}">
     <div class="task-top">
       <div class="task-ico">${def.icon}</div>
       <div class="task-main">
         <div class="task-name">
           <strong>${esc(def.label)}</strong>
+          ${t.required?`<span class="pill blue" title="Part of the ${esc(S.definition.name)} process">step</span>`:''}
           ${def.manual?`<span class="pill neutral" title="No server executor — a person closes this one">manual</span>`:''}
           <span class="pill ${tone}">${t.status==='RUNNING'?I.spin:''}${label}</span>
           ${t.attempts>1?`<span class="pill neutral">attempt ${t.attempts}</span>`:''}
@@ -903,6 +949,16 @@ function taskCard(r,t,locked){
             ${canSign?`<button class="btn sm go" data-act="sign" data-id="${w.id}">${I.pen} ${esc(def.completeLabel||'Complete')}</button>`
                      :`<span class="pill neutral">not yours to do</span>`}
           </div>`:''}
+        ${blocker?`<div class="task-wait">
+            <span class="wi">${I.warn}</span>
+            <div style="flex:1">
+              <div><b>Blocked before this step could start.</b></div>
+              ${blocker.unmet.map(u=>`<div style="margin-top:2px">${esc(u.label)} — ${esc(u.reason)}</div>`).join('')}
+            </div>
+            ${canClear?`<button class="btn sm go" data-act="sign" data-id="${blocker.id}">Supply &amp; continue</button>`
+                      :`<span class="pill neutral">not yours to clear</span>`}
+          </div>`:''}
+        ${t.status==='SKIPPED'?`<div class="task-note">Skipped — ${esc(t.skipReason||'a skip rule matched')}.</div>`:''}
         ${t.status==='FAILED'? `<div class="task-err">${I.warn}<div>
             <div><b>Execution failed.</b> ${esc(t.error||'')}</div>
             ${t.errorSource?`<div class="mono" style="margin-top:3px;opacity:.85">${esc(t.errorSource)}</div>`:''}
@@ -917,40 +973,53 @@ function taskCard(r,t,locked){
           aria-label="Run this task on its own">${t.status==='FAILED'?I.rerun:I.play}</button>
         <button class="btn sm ico" data-act="show-log" data-id="${t.id}"
           title="Execution log" aria-label="Execution log">${I.log}${logCount?`<span class="n">${logCount}</span>`:''}</button>
-        <button class="btn sm ico" data-act="del-task" data-id="${t.id}" ${locked?'disabled':''}
-          title="Remove this task" aria-label="Remove this task">${I.trash}</button>
+        <button class="btn sm ico" data-act="del-task" data-id="${t.id}"
+          ${locked||t.required?'disabled':''}
+          title="${t.required?'Part of the '+esc(S.definition.name)+' process — cannot be removed'
+                             :'Remove this task'}"
+          aria-label="Remove this task">${I.trash}</button>
       </div>
     </div>
   </article>`;
 }
 
 function paneData(r){
-  return `<div class="card"><div class="formgrid">
+  const frozen = runInFlight(r);
+  return `<div class="card">
+    ${frozen?`<div class="databar">${I.pause} A run is in progress, so the fields it was approved
+      against are frozen. Values a blocked step needs are supplied through the work item.</div>`:''}
+    <div class="formgrid">
     ${S.definition.dataParameters.map(p=>{
       const v = r.data[p.name];
+      /* EXECUTION fields are written by a task's output mapping and sit outside the
+         hash. AUTHOR fields are inside it, so they freeze while a run holds it. */
+      const written = p.owner==='EXECUTION';
+      const disabled = written || frozen;
+      const note = written ? `Written by a task — not editable here.`
+                 : frozen  ? `Frozen: the approvals for this run cover this value.` : '';
       if(p.type==='boolean'){
         return `<div class="field">
-          <label>${esc(p.label)}</label>
+          <label>${esc(p.label)}${written?' <span class="pill neutral">set by execution</span>':''}</label>
           <label class="switch">
-            <input type="checkbox" data-act="data-bool" data-name="${p.name}" ${v?'checked':''}>
+            <input type="checkbox" data-act="data-bool" data-name="${p.name}" ${v?'checked':''}
+              ${disabled?'disabled':''}>
             <span class="track"></span>
-            <span>${v?'Confirmed':'Not confirmed'}</span>
+            <span>${v?'Yes':'No'}</span>
           </label>
-          <span class="hint">The execution rules check this before anything can run.</span>
+          ${note?`<span class="hint">${esc(note)}</span>`
+                :`<span class="hint">A task's skip rule reads this — and it is inside the hash,
+                   so changing it dismisses approvals.</span>`}
         </div>`;
       }
-      /* A field that some task's output mapping targets is server-owned. Showing it
-         read-only is the visible half of the rule; the server refusing the write is
-         the half that matters. */
-      const written = typeof isExecutionWritten==='function' && isExecutionWritten(p.name);
       return `<div class="field">
         <label>${esc(p.label)}${written?' <span class="pill neutral">set by execution</span>':''}</label>
         <input type="text" value="${esc(v??'')}" data-act="data-text" data-name="${p.name}"
-          ${written?'disabled':''}>
-        ${written?`<span class="hint">Written by a task's output mapping — not editable here.</span>`:''}
+          ${disabled?'disabled':''}>
+        ${note?`<span class="hint">${esc(note)}</span>`:''}
       </div>`;
     }).join('')}
-  </div></div>`;
+    </div>
+  </div>`;
 }
 
 function paneTalk(r){
@@ -1000,7 +1069,7 @@ function paneHist(r){
 
 function panelApprovals(r,gate){
   const hash = gate.hash;
-  const rule = S.definition.rules.find(x=>x.kind==='approvals');
+  const rule = S.definition.executionRules.find(x=>x.kind==='approvals');
   const good = r.approvals.filter(a=>a.decision==='APPROVED'&&a.hash===hash&&
     (!rule||!rule.roles.length||rule.roles.some(ro=>hasRole(a.user,ro)))&&
     (!rule||!rule.excludeRequester||a.user!==r.requester));
@@ -1105,139 +1174,6 @@ function gateBox(r,gate){
   </section>`;
 }
 
-/* ============================ render: definition ============================ */
-function viewDefinition(){
-  const d = S.definition;
-  return `
-  <div class="page-head">
-    <div>
-      <h1>${esc(d.name)}</h1>
-      <p>The template. Everything here is set up by an administrator — no code involved.</p>
-    </div>
-    <button class="btn" data-act="back-inbox">${I.chevL} Back to requests</button>
-  </div>
-  <div class="def-body">
-    <nav class="sidenav">
-      ${[['workflow','Status workflow'],['tasks','Allowed tasks'],['data','Data parameters'],['rules','Execution rules']]
-        .map(([k,l])=>`<button data-def="${k}" aria-current="${S.defSection===k}">${l}</button>`).join('')}
-    </nav>
-    <div class="card">
-      ${S.defSection==='workflow'? defWorkflow()
-       :S.defSection==='tasks'   ? defTasks()
-       :S.defSection==='data'    ? defData()
-       :                           defRules()}
-    </div>
-  </div>`;
-}
-function defWorkflow(){
-  const box=(x,y,w,label,tone)=>{
-    const fill = tone==='ok'?'var(--ok-soft)':tone==='bad'?'var(--bad-soft)':tone==='blue'?'var(--accent-soft)':'var(--surface-2)';
-    const line = tone==='ok'?'var(--ok-line)':tone==='bad'?'var(--bad-line)':tone==='blue'?'var(--accent-line)':'var(--border-strong)';
-    const ink  = tone==='ok'?'var(--ok)':tone==='bad'?'var(--bad)':tone==='blue'?'var(--accent)':'var(--ink-2)';
-    return `<g><rect x="${x}" y="${y}" width="${w}" height="34" rx="6" fill="${fill}" stroke="${line}"/>
-      <text x="${x+w/2}" y="${y+22}" text-anchor="middle" fill="${ink}"
-        style="font:600 11.5px var(--sans);letter-spacing:.05em">${label}</text></g>`;
-  };
-  const arrow=(x1,y1,x2,y2,dash)=>`<path d="M${x1} ${y1} L${x2} ${y2}" stroke="var(--border-strong)"
-      stroke-width="1.4" marker-end="url(#ah)" ${dash?'stroke-dasharray="4 3"':''} fill="none"/>`;
-  return `<div class="graph">
-    <svg width="720" height="200" role="img" aria-label="Status workflow graph">
-      <defs><marker id="ah" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
-        <path d="M0 0 L8 4 L0 8 z" fill="var(--border-strong)"/></marker></defs>
-      ${box(10,26,96,'OPEN','blue')}
-      ${box(186,26,110,'APPROVED','ok')}
-      ${box(376,26,116,'COMPLETED','')}
-      ${box(572,26,110,'ARCHIVED','')}
-      ${box(186,124,110,'REJECTED','bad')}
-      ${arrow(108,43,184,43)}
-      ${arrow(298,43,374,43)}
-      ${arrow(494,43,570,43)}
-      ${arrow(240,60,240,122,true)}
-      ${arrow(186,60,110,60,true)}
-      <text x="150" y="34" text-anchor="middle" fill="var(--ink-3)" style="font:400 10px var(--mono)">Administrator</text>
-      <text x="336" y="34" text-anchor="middle" fill="var(--ink-3)" style="font:400 10px var(--mono)">NetOps</text>
-      <text x="532" y="34" text-anchor="middle" fill="var(--ink-3)" style="font:400 10px var(--mono)">Administrator</text>
-      <text x="250" y="96" fill="var(--ink-3)" style="font:400 10px var(--mono)">reject</text>
-      <text x="118" y="74" fill="var(--ink-3)" style="font:400 10px var(--mono)">send back</text>
-    </svg>
-    <p style="margin:12px 0 0;color:var(--ink-3);font-size:12.5px;max-width:60ch">
-      Each arrow carries the roles allowed to make that move, so who may advance a request is a setting,
-      not a code change. This is the transition editor AixBOMS already uses for ticket status.
-    </p>
-  </div>`;
-}
-function defTasks(){
-  return `<div style="padding:15px">
-    <p style="margin:0 0 12px;color:var(--ink-3);font-size:13px">
-      Which kinds of work may be put into a request of this type. The catalogue is authored in
-      <b>Task types</b> and stored as <span class="mono">task-definitions.json</span> — each entry
-      wraps a server action the platform can already run, or is closed by a person.</p>
-    <div class="tiles">
-      ${Object.values(TASK_DEFS).map(d=>`<div class="tile" style="cursor:default">
-        <span class="ti">${d.icon}</span><b>${esc(d.label)}</b>
-        <small>${esc(d.desc)}</small>
-        <small class="mono" style="opacity:.75">${esc(d.manual?'manual':d.action||'')}</small>
-      </div>`).join('')}
-    </div>
-    <button class="btn sm" data-nav="taskdefs" style="margin-top:12px">${I.gear} Edit task types</button>
-  </div>`;
-}
-function defData(){
-  return `<div style="padding:15px">
-    <p style="margin:0 0 12px;color:var(--ink-3);font-size:13px">
-      Fields copied into every new request of this type. The values are then edited per request,
-      and the execution rules can check them.</p>
-    <div class="rows" style="box-shadow:none">
-      ${S.definition.dataParameters.map(p=>`<div class="row" style="cursor:default">
-        <div class="rmain"><div class="rtitle"><strong>${esc(p.label)}</strong>
-          <span class="pill neutral">${p.type}</span></div>
-          <div class="rmeta"><span class="mono">${esc(p.name)}</span><span class="dot">·</span>
-          <span>default ${esc(String(p.defaultValue))}</span></div></div>
-      </div>`).join('')}
-    </div>
-  </div>`;
-}
-function defRules(){
-  const r = req() || S.requests[0];
-  const gate = evaluateGate(r);
-  const KINDS = {
-    approvals:'Approvals', noUnresolvedChangeRequests:'No open change requests',
-    allTasksSucceeded:'All tasks succeeded', data:'Data value',
-  };
-  return `<div style="padding:15px">
-    <p style="margin:0 0 12px;color:var(--ink-3);font-size:13px">
-      Every rule must pass before the Execute button unlocks. Change one and the gate on
-      <span class="mono">${esc(r.id)}</span> updates immediately.</p>
-    ${S.definition.rules.map((rule,i)=>`
-      <div class="rulecard">
-        <div class="rulecard-top">
-          <span class="rulecard-num">${i+1}</span>
-          <strong style="flex:1">${KINDS[rule.kind]}</strong>
-          <span class="pill ${gate.rules[i].satisfied?'ok':'bad'}">${gate.rules[i].satisfied?'passing':'blocking'}</span>
-        </div>
-        <div class="rulecard-body">
-          ${rule.kind==='approvals'? `
-            <span>at least</span>
-            <input type="number" min="1" max="3" value="${rule.min}" data-act="rule-min" data-i="${i}">
-            <span>approval(s) from</span>
-            <span class="chip">${esc(rule.roles.join(', ')||'anyone')}</span>
-            <label class="switch" style="gap:7px">
-              <input type="checkbox" data-act="rule-excl" data-i="${i}" ${rule.excludeRequester?'checked':''}>
-              <span class="track"></span><span>exclude the requester</span>
-            </label>`
-          : rule.kind==='data' ? `
-            <span class="chip">${esc(rule.path)}</span><span>must be true</span>`
-          : `<span style="color:var(--ink-3)">No options.</span>`}
-        </div>
-      </div>`).join('')}
-    <div style="margin-top:13px;padding:11px 13px;background:var(--surface-2);border:1px solid var(--border);
-      border-radius:var(--r);font-size:12.5px;color:var(--ink-2)">
-      <b>On failure:</b> ${S.definition.onError==='STOP'
-        ? 'stop — remaining tasks are left untouched.' : 'carry on with the remaining tasks.'}
-      <button class="btn sm ghost" data-act="toggle-onerror" style="margin-left:8px">Change</button>
-    </div>
-  </div>`;
-}
 
 /* ============================ dialogs ============================ */
 function closeModal(){ $('#modal').innerHTML=''; }
@@ -1246,22 +1182,72 @@ function openModal(html){
   const f = $('#modal input, #modal select, #modal button');
   if(f) f.focus();
 }
-function dlgAddTask(){
+function dlgAddTask(at){
+  const r = req();
+  const where = at>=r.taskItems.length
+    ? 'at the end of the list'
+    : `before <b>${esc(TASK_DEFS[r.taskItems[at].def].label)}</b>`;
   openModal(`<div class="dialog" role="dialog" aria-modal="true" aria-label="Add task">
     <div class="dhead"><h2>Add a task</h2>
       <button class="iconbtn" data-act="close">${I.cross}</button></div>
     <div class="dbody">
       <p style="margin:0;color:var(--ink-3);font-size:13px">
-        Pick the kind of work to add. This list is what the server can actually carry out.</p>
+        Pick the kind of work to add — it goes in ${where}. This list is the catalogue
+        authored under <b>Task types</b>.</p>
       <div class="tiles">
-        ${Object.values(TASK_DEFS).map(d=>`<button class="tile" data-act="pick-task" data-def="${d.name}">
+        ${Object.values(TASK_DEFS).map(d=>`<button class="tile" data-act="pick-task"
+            data-def="${d.name}" data-at="${at}">
           <span class="ti">${d.icon}</span><b>${esc(d.label)}</b><small>${esc(d.desc)}</small>
         </button>`).join('')}
       </div>
     </div>
   </div>`);
 }
-function dlgConfigTask(defName, taskId){
+
+/* A blocked step: show what is missing, and collect it. The values arrive through
+   the execution path, so they land outside the hash and the run's approvals hold. */
+function dlgBlocker(workItemId){
+  const r = req();
+  const w = r.workItems.find(x=>x.id===workItemId);
+  const fields = (w.needs||[])
+    .map(path=>S.definition.dataParameters.find(p=>p.name===path))
+    .filter(p=>p && p.owner==='EXECUTION');
+  const frozen = (w.needs||[])
+    .map(path=>S.definition.dataParameters.find(p=>p.name===path))
+    .filter(p=>p && p.owner!=='EXECUTION');
+  openModal(`<div class="dialog" role="dialog" aria-modal="true" aria-label="Blocked step">
+    <div class="dhead">
+      <span style="color:var(--warn)">${I.warn}</span>
+      <h2>${esc(w.title)}</h2>
+      <button class="iconbtn" data-act="close">${I.cross}</button>
+    </div>
+    <div class="dbody">
+      <div class="ctxbox">
+        <h4>Not satisfied</h4>
+        ${w.unmet.map(u=>`<div class="ctxrow"><span>${esc(u.label)}</span>
+          <span class="mono">${esc(u.reason)}</span></div>`).join('')}
+      </div>
+      ${fields.map(p=>`<div class="field">
+        <label>${esc(p.label)} <span class="req">*</span></label>
+        <input type="text" data-p="${p.name}" value="${esc(r.data[p.name]??'')}">
+      </div>`).join('')}
+      ${frozen.length?`<div class="task-err">${I.warn}<div>
+        ${frozen.map(p=>esc(p.label)).join(', ')} — the approvals for this run cover
+        ${frozen.length===1?'this value':'these values'}, so ${frozen.length===1?'it':'they'} cannot be
+        changed mid-run. Cancel the run to edit ${frozen.length===1?'it':'them'}, then execute again.
+      </div></div>`:''}
+      <div style="font-size:12px;color:var(--ink-3);border-top:1px solid var(--border);padding-top:11px">
+        What you supply here is recorded as execution output — attributed to you and in the log —
+        so it does not disturb the approvals already given.
+      </div>
+    </div>
+    <div class="dfoot">
+      <button class="btn" data-act="close">Cancel</button>
+      ${fields.length?`<button class="btn go" data-act="do-unblock" data-id="${w.id}">${I.check} Supply &amp; continue</button>`:''}
+    </div>
+  </div>`);
+}
+function dlgConfigTask(defName, taskId, at){
   const def = TASK_DEFS[defName];
   const r = req();
   const t = taskId ? r.taskItems.find(x=>x.id===taskId) : null;
@@ -1292,7 +1278,8 @@ function dlgConfigTask(defName, taskId){
     </div>
     <div class="dfoot">
       <button class="btn" data-act="close">Cancel</button>
-      <button class="btn primary" data-act="save-task" data-def="${defName}" data-id="${taskId||''}">
+      <button class="btn primary" data-act="save-task" data-def="${defName}" data-id="${taskId||''}"
+        data-at="${at===undefined?'':at}">
         ${t?'Save changes':'Add task'}</button>
     </div>
   </div>`);
@@ -1395,7 +1382,7 @@ function dlgNewRequest(){
 function note(r,text,who){ r.history.push({at:stamp(),who:who||S.me,text}); }
 
 function approve(decision){
-  const r=req(); const hash=taskConfigHash(r.taskItems);
+  const r=req(); const hash=taskConfigHash(r);
   r.approvals = r.approvals.filter(a=>a.user!==S.me);
   r.approvals.push({id:'a'+(++S.seq), user:S.me, decision, at:stamp(), hash});
   note(r, decision==='APPROVED'?'approved this request':'rejected this request');
@@ -1484,11 +1471,43 @@ async function driveRun(r){
   run.state='RUNNING'; render();
   while(run.cursor < r.taskItems.length){
     const t = r.taskItems[run.cursor];
-    if(t.status==='SUCCEEDED'){ run.cursor++; continue; }
+    if(t.status==='SUCCEEDED'||t.status==='SKIPPED'){ run.cursor++; continue; }
     const d = TASK_DEFS[t.def];
 
+    /* Skip: decided once, when the cursor arrives. The run carries straight on —
+       nothing waits, and the step is recorded as skipped rather than done. */
+    const skip = (t.skipWhen||[]).filter(rule=>evaluateRule(rule,r).satisfied);
+    if(skip.length){
+      t.status='SKIPPED'; t.skipReason = skip.map(x=>evaluateRule(x,r).label).join('; ');
+      r.logs.push({taskId:t.id, attempt:t.attempts, at:stamp(), outcome:'SKIPPED', ms:0,
+        by: run.resumed?'system':run.startedBy,
+        detail:`Skipped — ${t.skipReason}.`});
+      note(r,`skipped ${d.label}`, run.resumed?'system':S.me);
+      run.cursor++; render(); continue;
+    }
+
+    /* Precondition: unlike a gate rule, this cannot be checked before the run
+       starts, because the value it needs may be produced by an earlier step. */
+    const unmet = (t.requires||[]).map(rule=>evaluateRule(rule,r)).filter(x=>!x.satisfied);
+    if(unmet.length){
+      const w = {id:'wi'+(++S.seq), runId:run.id, taskItemId:t.id, kind:'BLOCKER',
+        title:`${d.label} cannot start`, roles:['Administrator','NetOps'],
+        dueAt:null, state:'OPEN', createdAt:stamp(),
+        unmet:unmet.map(x=>({label:x.label, reason:x.reason})),
+        needs:(t.requires||[]).filter((rule,i)=>!evaluateRule(rule,r).satisfied).map(rule=>rule.path),
+        context:priorOutputs(r,run.cursor), result:null};
+      r.workItems.push(w);
+      t.status='WAITING';
+      run.state='WAITING'; run.waitingOn=w.id;
+      note(r,`execution blocked before ${d.label} — ${unmet.map(x=>x.label).join('; ')}`,
+        run.resumed?'system':S.me);
+      render();
+      toast(`Blocked — ${unmet[0].label}`);
+      return;
+    }
+
     if(d.manual){
-      const w = {id:'wi'+(++S.seq), runId:run.id, taskItemId:t.id,
+      const w = {id:'wi'+(++S.seq), runId:run.id, taskItemId:t.id, kind:'TASK',
         /* Convention: a manual task's `assignedRole` and `dueBy` config params say
            who may close it and by when. Declaring that in manualTaskConfig instead
            of relying on a name is the obvious next step. */
@@ -1517,15 +1536,41 @@ async function driveRun(r){
     }
     run.cursor++;
   }
-  run.state = r.taskItems.every(t=>t.status==='SUCCEEDED') ? 'COMPLETED' : 'FAILED';
+  run.state = r.taskItems.every(t=>t.status==='SUCCEEDED'||t.status==='SKIPPED')
+    ? 'COMPLETED' : 'FAILED';
   run.finishedAt=stamp();
   render();
   toast(run.state==='COMPLETED'?'All tasks completed':'Run finished with failures');
 }
 
+/* Resolving a blocker: the missing values are supplied through the work item, not
+   by editing the Data tab. They are execution-written, so they sit outside the
+   hash and the approvals given for this run survive — and the audit trail records
+   who supplied them. If nothing satisfies the rule, the run stays parked. */
+async function resolveBlocker(id, values){
+  const r=req();
+  const w=r.workItems.find(x=>x.id===id); if(!w||w.state!=='OPEN') return;
+  const t=r.taskItems.find(x=>x.id===w.taskItemId);
+  Object.entries(values).forEach(([k,v])=>{ if(v!=='') r.data[k]=v; });
+  const still = (t.requires||[]).map(rule=>evaluateRule(rule,r)).filter(x=>!x.satisfied);
+  if(still.length){
+    render(); toast(`Still blocked — ${still[0].label}`); return;
+  }
+  w.state='COMPLETED'; w.result=values; w.completedBy=S.me; w.completedAt=stamp();
+  t.status='NOT_RUN';
+  r.logs.push({taskId:t.id, attempt:t.attempts, at:stamp(), by:S.me, outcome:'SUCCEEDED', ms:0,
+    detail:`Blocker cleared by ${USERS[S.me].name}.\n`
+         + Object.entries(values).filter(([,v])=>v).map(([k,v])=>`  request.${k} = ${v}`).join('\n')});
+  note(r,`cleared the block on ${TASK_DEFS[t.def].label}`);
+  r.run.waitingOn=null; r.run.resumed=true; r.run.triggeredBy=S.me;
+  closeModal(); render(); toast('Unblocked — execution continues');
+  await driveRun(r);
+}
+
 async function completeWorkItem(id,result){
   const r=req();
   const w=r.workItems.find(x=>x.id===id); if(!w||w.state!=='OPEN') return;
+  if(w.kind==='BLOCKER') return resolveBlocker(id,result);
   const t=r.taskItems.find(x=>x.id===w.taskItemId);
   const d=TASK_DEFS[t.def];
   w.state='COMPLETED'; w.result=result; w.completedBy=S.me; w.completedAt=stamp();
@@ -1678,8 +1723,13 @@ document.addEventListener('click', e=>{
       render(); toast(act==='post-cr'?'Change requested':'Comment added'); break;
     }
 
-    case 'add-task':    dlgAddTask(); break;
-    case 'pick-task':   dlgConfigTask(btn.dataset.def, null); break;
+    case 'add-task':    dlgAddTask(+(btn.dataset.at ?? r.taskItems.length)); break;
+    case 'pick-task':   dlgConfigTask(btn.dataset.def, null, +btn.dataset.at); break;
+    case 'do-unblock':{
+      const values = {};
+      document.querySelectorAll('#modal [data-p]').forEach(el=>{ values[el.dataset.p]=el.value.trim(); });
+      resolveBlocker(btn.dataset.id, values); break;
+    }
     case 'config-task':{
       const t=r.taskItems.find(x=>x.id===btn.dataset.id);
       dlgConfigTask(t.def, t.id); break;
@@ -1695,9 +1745,9 @@ document.addEventListener('click', e=>{
       if(missing){ toast(`${missing} is required`); break; }
       if(id){
         const t=r.taskItems.find(x=>x.id===id);
-        const before=taskConfigHash(r.taskItems);
+        const before=taskConfigHash(r);
         t.config=cfg;
-        const after=taskConfigHash(r.taskItems);
+        const after=taskConfigHash(r);
         if(before!==after){
           if(t.status!=='NOT_RUN'){ t.status='NOT_RUN'; t.error=null; }
           const dismissed=r.approvals.filter(a=>a.hash===before).length;
@@ -1706,8 +1756,12 @@ document.addEventListener('click', e=>{
           else toast('Task updated');
         }
       }else{
-        r.taskItems.push({id:'ti'+(++S.seq), def:defName, status:'NOT_RUN', attempts:0, config:cfg});
-        note(r,`added a ${def.label} task`);
+        /* Ad-hoc tasks are never `required` — only steps that came from the flow are. */
+        const at = btn.dataset.at==='' ? r.taskItems.length
+                 : Math.max(0, Math.min(r.taskItems.length, +btn.dataset.at));
+        r.taskItems.splice(at, 0, {id:'ti'+(++S.seq), def:defName, status:'NOT_RUN',
+          attempts:0, config:cfg, required:false, skipWhen:[], requires:[]});
+        note(r,`added a ${def.label} task at position ${at+1}`);
         toast('Task added');
       }
       r.version++;
@@ -1724,7 +1778,11 @@ document.addEventListener('click', e=>{
     case 'run-all': startRun(); break;
     case 'run-one': runSingle(btn.dataset.id); break;
     case 'cancel-run': cancelRun(); break;
-    case 'sign': dlgSign(btn.dataset.id); break;
+    case 'sign':{
+      const w = r.workItems.find(x=>x.id===btn.dataset.id);
+      if(w && w.kind==='BLOCKER') dlgBlocker(w.id); else dlgSign(btn.dataset.id);
+      break;
+    }
     case 'do-sign': case 'do-refuse':{
       const w=r.workItems.find(x=>x.id===btn.dataset.id);
       const def=TASK_DEFS[r.taskItems.find(t=>t.id===w.taskItemId).def];
@@ -1747,21 +1805,23 @@ document.addEventListener('click', e=>{
     case 'create-request':{
       const name=($('#nr-name')?.value||'').trim();
       if(!name){ toast('Give the request a title'); break; }
-      const id='TR-'+(1043+S.seq);
+      const id='TR-'+(2088+S.seq);
       const data={}; S.definition.dataParameters.forEach(p=>data[p.name]=p.defaultValue);
+      /* The whole point of a task flow: the plan arrives already built. */
+      const items = instantiateFlow(S.definition, S.seq);
+      S.seq += items.length;
       S.requests.unshift({
         id, name, requester:S.me, status:'OPEN', createdAt:stamp(), version:1,
-        data, taskItems:[], approvals:[], changeRequests:[], comments:[], logs:[],
+        data, taskItems:items, approvals:[], changeRequests:[], comments:[], logs:[],
         workItems:[], run:null,
-        history:[{at:stamp(), who:S.me, text:`created this request from ${S.definition.name}`}],
+        history:[{at:stamp(), who:S.me,
+          text:`created this request from ${S.definition.name} — ${items.length} step${items.length===1?'':'s'} instantiated`}],
       });
       S.seq++; S.openRequestId=id; S.screen='request'; S.requestTab='tasks';
-      closeModal(); render(); toast('Request created — add a task next'); break;
+      closeModal(); render();
+      toast(`Request created with ${items.length} step${items.length===1?'':'s'}`); break;
     }
 
-    case 'toggle-onerror':
-      S.definition.onError = S.definition.onError==='STOP'?'CONTINUE':'STOP';
-      render(); break;
   }
 });
 
@@ -1773,13 +1833,6 @@ document.addEventListener('change', e=>{
     const to=el.value; if(!to) return;
     r.status=to; note(r,`moved this request to ${to}`); r.version++;
     render(); toast(`Moved to ${to}`); return;
-  }
-  if(act==='rule-min'){
-    const v=Math.max(1,Math.min(3,parseInt(el.value||'1',10)));
-    S.definition.rules[+el.dataset.i].min=v; render(); return;
-  }
-  if(act==='rule-excl'){
-    S.definition.rules[+el.dataset.i].excludeRequester=el.checked; render(); return;
   }
 });
 document.addEventListener('input', e=>{
@@ -1797,22 +1850,29 @@ $('#themebtn').addEventListener('click',()=>{
   const dark = cur ? cur==='dark' : matchMedia('(prefers-color-scheme: dark)').matches;
   document.documentElement.setAttribute('data-theme', dark?'light':'dark');
 });
-$('#resetbtn').addEventListener('click',()=>{ S=seed(); render(); toast('Prototype reset'); });
+$('#resetbtn').addEventListener('click',()=>{ boot(); toast('Prototype reset'); });
 
-/* ---- seed the two pre-existing approvals against the current hash ---- */
-S = seed();
-(function fixSeedHashes(){
-  S.requests.forEach(r=>{
-    const h=taskConfigHash(r.taskItems);
-    r.approvals.forEach(a=>{ if(a.hash===null) a.hash=h; });
-  });
-})();
-/* First paint happens after the task-definition catalogue has loaded — see below. */
+
+/* Seeding needs the request-type document, so the first paint waits for the data
+   files below. boot() is called once they have all loaded. */
+function boot(){
+  S = seed();
+  (function fixSeedHashes(){
+    S.requests.forEach(r=>{
+      const h=taskConfigHash(r);
+      r.approvals.forEach(a=>{ if(a.hash===null) a.hash=h; });
+    });
+  })();
+  render();
+}
 </script>
 
-<!-- The task-definition catalogue, then the editor that owns it. Classic scripts,
-     not modules: module scripts and fetch() of a sibling .json are both blocked
-     over file://, and this prototype has to survive being double-clicked. -->
+<!-- Data first, then the editors that own it. Classic scripts, not modules:
+     module scripts and fetch() of a sibling .json are both blocked over file://,
+     and this prototype has to survive being double-clicked. -->
 <script src="task-definitions.json.js"></script>
+<script src="request-types.json.js"></script>
 <script src="task-editor.js"></script>
-<script>render();</script>
+<script src="request-type-editor.js"></script>
+<script src="execution-rules-editor.js"></script>
+<script>boot();</script>
