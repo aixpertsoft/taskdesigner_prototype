@@ -50,7 +50,7 @@ so click freely. The reset button (top right) restores the seeded state at any t
 | **Viewing as** | top right | Switches the current user. This is the key control — approvals are per person, so most of the prototype only makes sense if you switch. |
 | **Reset** | top right | Restores the starting state. |
 | **Theme** | top right | Light / dark. |
-| **Requests / Request types** | top left | The two halves: everyday use, and administrator setup. |
+| **Runtime / Designer** | top left | The two applications in one shell: the end user's task requests, and the administrator's process design. Designer edits are live in the runtime the moment you switch. |
 
 ### The demo users
 
@@ -126,7 +126,13 @@ single most important assertion in the POC.
 ## Repository layout
 
 ```
-index.html                  requests, approvals and the execution engine
+index.html                  the shell: markup, seed data, render(), event wiring, boot
+app.css                     base styles
+core.js                     icons, demo users, helpers, and the RULE ENGINE
+inbox-view.js               the runtime's landing screen
+request-view.js             the request screen: cards, panes, rail, gate bar
+dialogs.js                  every modal
+run-engine.js               execution and every mutation
 task-definitions.json.js    the task catalogue, as data
 request-types.json.js       the request types and their task flows, as data
 task-editor.js              the Task types screen and the binding resolver
@@ -139,27 +145,16 @@ docs/prototype-guide.md     screen-by-screen walkthrough
 
 ## Editing the prototype
 
-Hand-written HTML, CSS and vanilla JavaScript. The split is by ownership: the two `*.json.js` files
-hold **data and no logic**, each editor owns its own model and screen, and `index.html` is only a
-consumer of both catalogues.
+Hand-written HTML, CSS and vanilla JavaScript, one file per responsibility. The two `*.json.js`
+files hold **data and no logic**; `core.js` carries the rule engine (`evaluateRule`/`evaluateGate` —
+the part worth porting); `run-engine.js` carries execution and every mutation; each screen and the
+dialogs render from their own file; each editor owns its model and screen. `index.html` is only the
+shell: markup, `seed()`, `render()`, the delegated event handlers (dispatching on `data-act`; each
+editor registers its own under `data-te`/`data-rt`/`data-er`/`data-dp`), and `boot()`.
 
-`index.html` is organised as:
-
-1. **CSS custom properties** — the full light palette on `:root`, redefined for dark under both
-   `prefers-color-scheme` and `[data-theme="dark"]`.
-2. **Reference data** — `USERS`, `STATUS_TRANSITIONS`.
-3. **State** — `seed()` returns the whole demo state; `S` holds the live copy; `boot()` runs it once
-   the data files have loaded.
-4. **Rule engine** — `evaluateRule()` and `evaluateGate()`. These mirror the specification and are the
-   part worth porting; everything else is throwaway.
-5. **Run engine** — `driveRun()`, `completeWorkItem()`, `resolveBlocker()`: the cursor, the park on a
-   manual step, and the resume when it closes.
-6. **Render functions** — `viewInbox()`, `viewRequest()` and their panes, all returning HTML strings.
-   `render()` redraws everything on any change.
-7. **Events** — one delegated `click` handler plus `change` and `input`, dispatching on `data-act`.
-   Each editor file registers its own handlers under its own attribute (`data-te`, `data-rt`,
-   `data-er`), so the files stay separable.
-
-The files load as **classic scripts, not modules** — `type="module"` and `fetch()` of a sibling
-`.json` are both blocked over `file://`, and the prototype has to survive being emailed around and
-opened from disk.
+The files load as **classic scripts sharing one global scope, not modules** — `type="module"` and
+`fetch()` of a sibling `.json` are both blocked over `file://`, and the prototype has to survive
+being emailed around and opened from disk. Load order is irrelevant for the function files
+(resolution happens at call time); only the data files must precede the editors that read them at
+load. If a file is missing or stale-cached, `boot()` names it on screen instead of leaving a dead
+button.

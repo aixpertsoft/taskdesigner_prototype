@@ -78,7 +78,6 @@ function viewDefinition(){
     <div style="display:flex;gap:8px">
       <button class="btn" data-rt="export">${I.log} Export JSON</button>
       <button class="btn" data-rt="import">Import JSON</button>
-      <button class="btn" data-act="back-inbox">${I.chevL} Back to requests</button>
     </div>
   </div>
   <div class="def-body">

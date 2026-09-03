@@ -43,6 +43,13 @@ role, so a single-user session cannot show the feature working. There are four:
 **Watch the bar under the task list.** It is the heart of the design: it says whether the request may
 run, what is stopping it, or who it is currently waiting for.
 
+**Two applications, one shell.** The switch at the top left flips between **Runtime** — the end
+user's app: inbox, requests, work items — and **Designer** — the administrator's: the request type
+with its task flow, data and rules, and the task type catalogue. They share live state on purpose:
+change a rule in the designer, switch back, and the gate has already responded. In production these
+would be separately permissioned applications; the prototype keeps them in one page so the
+cause-and-effect between them stays demonstrable.
+
 ---
 
 ## The five-minute demo
@@ -398,12 +405,15 @@ their model, and `index.html` is only a consumer:
 
 | File | Owns |
 | --- | --- |
+| `core.js` | icons, demo users, helpers, and the **rule engine** — the part worth porting |
+| `run-engine.js` | execution and every mutation — the `drive()` loop as a statement of intent |
+| `inbox-view.js` / `request-view.js` / `dialogs.js` | the runtime screens and modals |
 | `task-definitions.json.js` | the task catalogue, as data |
 | `request-types.json.js` | the request types and their task flows, as data |
 | `task-editor.js` | the task-definition model, the binding resolver, the Task types screen |
 | `request-type-editor.js` | the Request types screen, including the task flow editor |
 | `execution-rules-editor.js` | the gate rules — the two rule types, and adding/removing them |
-| `index.html` | requests, approvals, the run engine — a consumer of both catalogues |
+| `index.html` | the shell — markup, seed data, `render()`, event wiring, boot |
 
 The render functions are throwaway: the real implementation is React and MUI on the existing designer
 shell.
