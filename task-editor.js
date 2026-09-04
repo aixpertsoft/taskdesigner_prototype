@@ -84,9 +84,8 @@ function flatten(raw){
        person's answers. One `outputs` list serves both. */
     outputs: copy(raw.kind==='MANUAL' ? m.outputs : s.outputs),
     resultParams: copy(m.resultParams),
-    /* The verb on the button that closes it — "Submit draft", "Approve", "Sign". */
+    /* The verb on the button that closes it — "Submit draft", "Submit decision". */
     completeLabel: m.completeLabel || 'Complete',
-    onRefusalDefault: m.onRefusalDefault || 'Send back',
   };
 }
 function nest(d){
@@ -96,8 +95,7 @@ function nest(d){
     out.serverActionConfig = {action:d.action||'', inputs:d.inputs||[], outputs:d.outputs||[]};
   }else{
     out.manualTaskConfig = {completeLabel:d.completeLabel||'Complete',
-                            resultParams:d.resultParams||[], outputs:d.outputs||[],
-                            onRefusalDefault:d.onRefusalDefault||'Send back'};
+                            resultParams:d.resultParams||[], outputs:d.outputs||[]};
   }
   return out;
 }
@@ -276,7 +274,7 @@ const E = {screen:'list', draft:null, original:null};
 function blankDef(){
   return {name:'', label:'', icon:'gear', description:'', kind:'SERVER',
           params:[], action:'', inputs:[], outputs:[],
-          resultParams:[], onRefusalDefault:'Send back'};
+          resultParams:[]};
 }
 function rawDef(name){
   return (TASK_DOC.definitions||[]).find(d=>d.name===name);
@@ -397,7 +395,7 @@ function fieldRows(list, which){
       <input type="text" data-te-f="${which}" data-i="${i}" data-k="name"  value="${esc(p.name||'')}"  placeholder="name" style="width:120px">
       <input type="text" data-te-f="${which}" data-i="${i}" data-k="label" value="${esc(p.label||'')}" placeholder="label" style="width:150px">
       <select data-te-f="${which}" data-i="${i}" data-k="type" style="width:auto">
-        ${['text','enum'].map(t=>`<option ${p.type===t?'selected':''}>${t}</option>`).join('')}
+        ${['text','enum','boolean'].map(t=>`<option ${p.type===t?'selected':''}>${t}</option>`).join('')}
       </select>
       ${p.type==='enum'
         ? `<input type="text" data-te-f="${which}" data-i="${i}" data-k="values"
@@ -584,13 +582,6 @@ function teEditor(){
               placeholder="Approve">
             <span class="hint">The verb the person sees — "Approve", "Submit draft", "Sign".</span>
           </div>
-          <div class="field">
-            <label>Default if declined</label>
-            <select data-te-d="onRefusalDefault">
-              ${['Send back','Fail the task','Not allowed'].map(v=>
-                `<option ${((d.onRefusalDefault)||'Send back')===v?'selected':''}>${v}</option>`).join('')}
-            </select>
-          </div>
         </div>
       </section>`:''}
 
@@ -658,7 +649,7 @@ function previewHTML(d, issues){
           <input type="text" disabled placeholder="${esc(p.placeholder||'')}">
         </div>`).join('')
         : `<div style="font-size:12.5px;color:var(--ink-3)">No form fields yet.</div>`}
-      <span class="hint">If refused by default: <b>${esc(d.onRefusalDefault||'Send back')}</b>.</span>
+      <span class="hint">A boolean answer here is what the flow's transitions route on.</span>
     </div>
   </section>`:''}
 

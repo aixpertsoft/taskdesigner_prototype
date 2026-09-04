@@ -64,16 +64,18 @@ so click freely. The reset button (top right) restores the seeded state at any t
 ### The example
 
 One worked case: **the notification a network operator must send customers before planned
-maintenance.** Four steps — a person drafts the notification, the server fingerprints the exact wording, an
-administrator approves that wording, the server sends it and records the result. The fingerprint is
-the point: it makes *what was approved* and *what was sent* provably the same text.
+maintenance.** A person drafts the notification, an administrator approves the exact wording (or
+sends it back — the process loops on their answer), and the server sends it and records the result.
+A designed slot in the middle can hold a **digital signature** when a cryptographic receipt of the
+approved wording is wanted — proof that *what was approved* and *what was sent* are the same text.
 
 ### Three things worth trying
 
 **1. Run it.** Open `TR-2087` and press **Execute all tasks**. It stops immediately — step 1 needs a
-person. Press **Submit draft** and write the notification. The server signs it, then parks again for an
-administrator. Switch to K. Weber, whose *Awaiting my action* tab now shows 1, and press **Approve**.
-The mail sends by itself. Nobody pressed "continue" — closing the human step *is* the resume.
+person. Press **Submit draft** and write the notification; the process routes straight to the
+approval. Switch to K. Weber, tick **Approve the wording**, and **Submit decision**. The mail sends
+by itself. Answer *no* instead and the process walks back to the draft — the flow's transitions
+route on her answer; there is no decline button and no continue button.
 
 **2. Watch the data fill in.** The **Data** tab has two fields you own and several marked *written
 by a task*. The subject, text, fingerprint and delivery status are written by the run, through the
@@ -90,8 +92,8 @@ the required approval count makes the gate respond immediately: configuration, n
 ### What is real and what is not
 
 **Real** — the rules engine, the approval quorum, role checks, the stale-approval dismissal, the
-execution gate, and the run state machine that parks on a manual task and resumes when someone signs
-it. A request's status is derived from that machine — open until the work is done — rather than
+execution gate, and the run state machine — a single token walking a routed graph, parking on
+manual steps, looping back when an approval answers no. A request's status is derived from that machine — open until the work is done — rather than
 being a second, hand-driven state machine beside it. These are the logic described in
 [the specification](docs/specification.md), so the Execute button is genuinely blocked rather than
 merely drawn greyed out.

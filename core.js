@@ -53,8 +53,10 @@ const USER_ORDER = ['mb','as','kw','jn'];
    One lifecycle is enough: open until the work is done. */
 const STATUS_TONE = {OPEN:'blue', COMPLETED:'ok'};
 function requestStatus(r){
-  return r.taskItems.length && r.taskItems.every(t=>t.status==='SUCCEEDED'||t.status==='SKIPPED')
-    ? 'COMPLETED' : 'OPEN';
+  /* Derived from the run, not from the items: with conditional routing, the
+     activities on an untaken branch legitimately stay NOT_RUN, so "every task
+     succeeded" stopped being the test. Done = the walk reached an end. */
+  return r.run && r.run.state==='COMPLETED' ? 'COMPLETED' : 'OPEN';
 }
 
 /* ============================ helpers ============================ */
@@ -91,12 +93,12 @@ function authorData(r){
   return out;
 }
 function taskConfigHash(r){
-  /* onRefusal is in here even though the requester cannot set it: the task item
-     carries it, and what the approver approved includes whether this step may be
-     declined at all. */
+  /* The routing is in here even though the requester cannot set it: what an
+     approver approved includes where the process may go — reassigning a step,
+     rewiring an edge or filling a placeholder slot all move the hash. */
   const items = (r.taskItems||[]).map(t=>
-    ({d:t.def, c:t.config, s:t.skipWhen, q:t.requires, f:t.onRefusal,
-      a:t.assignedRoles, u:t.dueBy}));
+    ({d:t.def, k:t.kind, c:t.config, q:t.requires, x:t.transitions,
+      b:t.start, e:t.end, a:t.assignedRoles, u:t.dueBy}));
   return fnv(JSON.stringify({tasks:items, data:authorData(r)}));
 }
 

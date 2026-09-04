@@ -4,30 +4,19 @@
    A request type carries four things: the status graph, the TASK FLOW, the data
    parameters, and the execution rules that gate a run.
 
-   The task flow is the substantive part. It is an ORDERED TEMPLATE: creating a
-   request instantiates it, so every request of a type starts as the same process
-   rather than an empty list somebody assembles by hand.
+   The task flow is the substantive part: an ACTIVITY GRAPH. Creating a request
+   instantiates it, so every request of a type starts as the same process.
 
-   Deliberately LINEAR. Steps run in order, and a step may be skipped — but there
-   is no branching, no parallelism and no loops. That line is what keeps this from
-   becoming a second copy of de.comconsult.wf; a conditional skip is a one-armed
-   router, and the arm is all this subsystem should ever grow.
+   The flow is a SINGLE-TOKEN STATE MACHINE. Activities are joined by
+   transitions — unconditional, or a single structured equality against request
+   data — evaluated in order, first match wins. Loops are allowed (approved =
+   false routes back to the draft); parallelism, fork/join, sub-processes and
+   timers are not. That is the line between this subsystem and
+   de.comconsult.wf, and it is meant to hold.
 
-   A step has two halves, and the split is the point:
-
-     AUTHORING — what the requester gets and may change
-       required  — the requester may not remove it
-       defaults  — pre-filled into the task when instantiated
-
-     runtimeConfig — how the ENGINE behaves here. Never shown to the requester,
-     never editable by them, but inside the approval hash all the same, because
-     what an approver approved includes how the step behaves.
-       onRefusal — what declining does; null falls back to the task type default
-       skipWhen  — TaskRule[]; if satisfied when the cursor arrives, the step is
-                   marked SKIPPED and the run carries on
-       requires  — TaskRule[]; if unsatisfied, the run parks on a blocker work
-                   item. These cannot be gate rules: the value may be produced by
-                   an earlier step, so they can only be judged at run time.
+   Exactly one activity is the start; one or more are ends. A PLACEHOLDER
+   activity is a designed slot the requester may fill at runtime from a list of
+   eligible task types — the only way a requester extends a plan.
 
    Both rule lists reuse evaluateRule() from index.html unchanged — there is no
    second rule engine and no expression language.
@@ -37,7 +26,7 @@
 /* ============================ the document ============================ */
 /* request-types.json.js is the source. Everything the editor changes is changed
    in this object, so Export hands back exactly what the server would store. */
-const RT_API = 'aixboms.requesttype/v1';
+const RT_API = 'aixboms.requesttype/v2';
 let REQUEST_TYPE_DOC = window.REQUEST_TYPES || {apiVersion:RT_API, requestTypes:[]};
 
 /* Refuse an unknown major rather than guessing at it — a file from a newer
@@ -54,7 +43,7 @@ function currentRequestType(){
   const list = REQUEST_TYPE_DOC.requestTypes||[];
   /* A deep copy: the session edits its own instance, and Export re-reads it. */
   return JSON.parse(JSON.stringify(list[0]||{
-    id:'empty', name:'Untitled', onError:'STOP',
+    id:'empty', name:'Untitled',
     executionRules:[], dataParameters:[], taskFlow:[]}));
 }
 /* The session's definition IS the document's first entry — write it back so an
@@ -93,52 +82,65 @@ function viewDefinition(){
   </div>`;
 }
 
-/* The runtime half of a step: how the engine behaves when it gets here. Created
-   lazily so a document written before the block existed still opens. */
+/* The runtime half of an activity. Created lazily so a document written before
+   a key existed still opens with sane defaults. */
 function rc(step){
   const c = step.runtimeConfig || (step.runtimeConfig = {});
-  if(!('onRefusal' in c)) c.onRefusal = null;
-  if(!c.assignedRoles)    c.assignedRoles = [];
-  if(!('dueBy' in c))     c.dueBy = null;
-  if(!c.skipWhen)         c.skipWhen = [];
-  if(!c.requires)         c.requires = [];
+  if(!c.assignedRoles)  c.assignedRoles = [];
+  if(!('dueBy' in c))   c.dueBy = null;
+  if(!c.display)        c.display = [];
+  if(!c.requires)       c.requires = [];
+  if(!c.transitions)    c.transitions = [];
   return c;
+}
+function stepMeta(step){
+  if(step.kind==='PLACEHOLDER')
+    return {label: step.label||'Placeholder', icon: I.plus, manual:false, placeholder:true, params:[]};
+  const d = TASK_DEFS[step.taskDefinition];
+  return d ? {label:d.label, icon:d.icon, manual:d.manual, placeholder:false, params:d.params, def:d}
+           : {label:step.taskDefinition+' (unknown)', icon:I.warn, manual:false, placeholder:false, params:[]};
+}
+function stepLabelById(id){
+  const st = (S.definition.taskFlow||[]).find(x=>x.stepId===id);
+  return st ? stepMeta(st).label : id;
 }
 
 /* ---------------------------------------------------------------- task flow */
 function flowStep(step,i){
-  const d = TASK_DEFS[step.taskDefinition];
+  const m = stepMeta(step);
   const last = S.definition.taskFlow.length-1;
-  if(!d) return `<div class="flowstep"><b>${esc(step.taskDefinition)}</b> — unknown task type</div>`;
   const dataParams = S.definition.dataParameters;
   return `
-  <div class="flowstep ${S.flowOpen===step.stepId?'open':''}">
+  <div class="flowstep ${S.flowOpen===step.stepId?'open':''} ${m.placeholder?'slotstep':''}">
     <div class="flowhead">
       <span class="flownum mono">${i+1}</span>
-      <span class="task-ico">${d.icon}</span>
+      <span class="task-ico">${m.icon}</span>
       <div class="flowmain">
         <div class="flowtitle">
-          <strong>${esc(d.label)}</strong>
-          ${d.manual?`<span class="pill neutral">manual</span>`:`<span class="pill blue">server</span>`}
-          ${step.required?`<span class="pill ok">required</span>`
-                         :`<span class="pill neutral">optional</span>`}
-          ${(rc(step).skipWhen||[]).length?`<span class="pill warn">skippable</span>`:''}
+          <strong>${esc(m.label)}</strong>
+          ${m.placeholder?`<span class="pill neutral">slot</span>`
+            : m.manual?`<span class="pill neutral">manual</span>`:`<span class="pill blue">server</span>`}
+          ${step.start?`<span class="pill ok">● start</span>`:''}
+          ${step.end?`<span class="pill ok">end ◉</span>`:''}
           ${(rc(step).requires||[]).length?`<span class="pill warn">has a precondition</span>`:''}
-          ${d.manual && refusalMode({def:step.taskDefinition, onRefusal:rc(step).onRefusal})==='Not allowed'
-            ? `<span class="pill bad">cannot be declined</span>`:''}
         </div>
         <div class="flowsub">${esc(
-          (d.manual ? `carried out by ${(rc(step).assignedRoles.length?rc(step).assignedRoles:['Administrator']).join(' or ')}`
+          (m.manual ? `carried out by ${(rc(step).assignedRoles.length?rc(step).assignedRoles:['Administrator']).join(' or ')}`
                      + (rc(step).dueBy?` · due ${rc(step).dueBy}`:'') + ' · ' : '')
-          + defaultsSummary(d,step))}</div>
+          + (m.placeholder
+              ? `may hold: ${(step.possibleTasks||[]).map(n=>TASK_DEFS[n]?TASK_DEFS[n].label:n).join(', ')||'nothing yet'}`
+              : defaultsSummary(m.def||{params:[]},step)))}
+          — then: ${(rc(step).transitions||[]).map(tr=>
+            `${tr.when?describeTransition(tr)+' → ':'→ '}${stepLabelById(tr.to)}`).join('; ')
+            || (step.end?'the process completes':'nowhere (dead end)')}</div>
       </div>
       <div class="flowacts">
         <button class="btn sm ico" data-rt="up" data-i="${i}" ${i===0?'disabled':''}
-          title="Move up">↑</button>
+          title="Move up (layout only — the arrows decide the order)">↑</button>
         <button class="btn sm ico" data-rt="down" data-i="${i}" ${i===last?'disabled':''}
-          title="Move down">↓</button>
+          title="Move down (layout only)">↓</button>
         <button class="btn sm ico" data-rt="toggle" data-id="${step.stepId}"
-          title="Configure this step">${I.gear}</button>
+          title="Configure this activity">${I.gear}</button>
         <button class="btn sm ico" data-rt="del-step" data-i="${i}"
           title="Remove from the flow">${I.trash}</button>
       </div>
@@ -146,25 +148,45 @@ function flowStep(step,i){
 
     ${S.flowOpen===step.stepId?`
     <div class="flowbody">
-      <label class="switch" style="margin-bottom:10px">
-        <input type="checkbox" data-rt="required" data-i="${i}" ${step.required?'checked':''}>
-        <span class="track"></span>
-        <span>Required — the requester cannot remove this step</span>
-      </label>
+      <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:10px">
+        <label class="switch">
+          <input type="checkbox" data-rt="start" data-i="${i}" ${step.start?'checked':''}>
+          <span class="track"></span><span>Start — the run begins here</span>
+        </label>
+        <label class="switch">
+          <input type="checkbox" data-rt="end" data-i="${i}" ${step.end?'checked':''}>
+          <span class="track"></span><span>End — completing here may finish the process</span>
+        </label>
+      </div>
 
+      ${m.placeholder?`
+      <h4>Slot</h4>
+      <span class="hint">A designed extension point: at runtime the requester sees an
+        <b>Add task</b> button here and may fill the slot with any of the eligible task types.
+        Empty, the run passes straight through.</span>
+      <div class="field" style="max-width:280px"><label>Label</label>
+        <input type="text" data-rt="plabel" data-i="${i}" value="${esc(step.label||'')}"
+          placeholder="Additional steps"></div>
+      <h5>Eligible task types</h5>
+      <div class="rolepick">
+        ${Object.values(TASK_DEFS).map(d=>`
+          <label class="rolechip ${(step.possibleTasks||[]).includes(d.name)?'on':''}">
+            <input type="checkbox" data-rt="ptask" data-i="${i}" data-name="${esc(d.name)}"
+              ${(step.possibleTasks||[]).includes(d.name)?'checked':''}>
+            ${esc(d.label)}
+          </label>`).join('')}
+      </div>`
+      :`
       <h4>Default values</h4>
       <span class="hint">Pre-filled into the task when a request is created. Fields marked
         <b>fixed</b> or <b>hidden</b> on the task type can only be set here — the requester cannot
-        change them, so a required one needs a value. Values that must come from the request at run
-        time are input mappings on the task type, not defaults.</span>
+        change them, so a required one needs a value.</span>
       <div class="formgrid" style="padding:0;max-width:none">
-        ${d.params.length? d.params.map(p=>{
+        ${m.params.length? m.params.map(p=>{
           const v = (step.defaults||{})[p.name] ?? '';
           const flag = p.hidden   ? ' <span class="pill warn">hidden</span>'
                      : p.readonly ? ' <span class="pill neutral">fixed</span>' : '';
-          /* Task settings are fixed at creation, so a template step's required
-             fields can ONLY come from these defaults. */
-          const warn = (p.required && !v)
+          const warn = (p.required && !v && p.type!=='boolean')
             ? `<span class="hint" style="color:var(--bad)">Required, and the requester cannot set
                 it — give it a value here.</span>` : '';
           if(p.type==='enum') return `<div class="field"><label>${esc(p.label)}${flag}</label>
@@ -177,14 +199,14 @@ function flowStep(step,i){
               value="${esc(v)}" placeholder="${esc(p.placeholder||'')}">${warn}</div>`;
         }).join('') : `<div style="font-size:12.5px;color:var(--ink-3)">This task type has no
           configuration fields.</div>`}
-      </div>
+      </div>`}
 
       <h4 class="rtsec">Runtime configuration</h4>
-      <span class="hint">How the engine behaves when it reaches this step. None of it is shown to
-        the requester or editable by them — but all of it is inside the approval hash, because what
-        an approver approved includes how the step behaves.</span>
+      <span class="hint">How the engine behaves at this activity. None of it is shown to the
+        requester — but all of it is inside the approval hash, because what an approver approved
+        includes how the process routes.</span>
 
-      ${d.manual?`
+      ${m.manual?`
       <h5>Who may carry it out</h5>
       <div class="rolepick">
         ${knownRoles().map(role=>`
@@ -196,30 +218,78 @@ function flowStep(step,i){
       </div>
       ${rc(step).assignedRoles.length?'':`<span class="hint" style="color:var(--warn)">
         Nobody selected — the engine falls back to Administrator.</span>`}
+
+      <h5>Shown to the person</h5>
+      <span class="hint">Which request fields the completion dialog displays, so each activity shows
+        only what its person needs. Fields with no value yet are omitted — list the approver's
+        comment on the draft step and it appears only on a redo, carrying the reason.</span>
+      <div class="rolepick">
+        ${S.definition.dataParameters.map(p=>`
+          <label class="rolechip ${rc(step).display.includes(p.name)?'on':''}">
+            <input type="checkbox" data-rt="dshow" data-i="${i}" data-name="${esc(p.name)}"
+              ${rc(step).display.includes(p.name)?'checked':''}>
+            ${esc(p.label)}
+          </label>`).join('')}
+      </div>
       <div class="field" style="margin-top:8px;max-width:220px">
         <label>Due by</label>
         <input type="text" data-rt="dueby" data-i="${i}" value="${esc(rc(step).dueBy||'')}"
           placeholder="12.09.2026">
-      </div>
+      </div>`:''}
 
-      <h5>If the person declines</h5>
-      <select data-rt="onrefusal" data-i="${i}" style="width:auto">
-        <option value="" ${!rc(step).onRefusal?'selected':''}>Use the task type's default (${esc(d.onRefusalDefault||'Send back')})</option>
-        ${['Send back','Fail the task','Not allowed'].map(v=>
-          `<option ${rc(step).onRefusal===v?'selected':''}>${v}</option>`).join('')}
-      </select>`:''}
-
-      <h5>Skip this step when…</h5>
-      <span class="hint">Evaluated once, when the run reaches this step. If it matches, the step is
-        recorded as <b>skipped</b> and the run carries straight on.</span>
-      ${ruleRows(rc(step),'skipWhen',i,dataParams,'Never skipped.')}
-
+      ${m.placeholder?'':`
       <h5>Do not start until…</h5>
       <span class="hint">Checked at run time, because the value may be produced by an earlier step.
         If it is not satisfied the run parks on a blocker until somebody supplies it.</span>
-      ${ruleRows(rc(step),'requires',i,dataParams,'No precondition.')}
+      ${ruleRows(rc(step),'requires',i,dataParams,'No precondition.')}`}
+
+      <h5>Transitions — where the process goes next</h5>
+      <span class="hint">Evaluated in order once this activity completes; the first match wins.
+        <b>always</b> is the "otherwise" and belongs last. A condition is one field compared to one
+        value — routing on the person's answer, like <span class="mono">approved = false</span>
+        back to the draft.</span>
+      ${transitionRows(step,i,dataParams)}
     </div>`:''}
   </div>`;
+}
+
+function transitionRows(step,i,dataParams){
+  const list = rc(step).transitions;
+  const others = (S.definition.taskFlow||[]).filter(x=>x.stepId!==step.stepId);
+  const condFields = dataParams;   /* boolean → true/false picker, text → exact value */
+  return `
+    ${list.length? list.map((tr,j)=>{
+      const p = tr.when ? condFields.find(x=>x.name===tr.when.path) : null;
+      return `<div class="te-map">
+        <select data-rt="tr-kind" data-i="${i}" data-j="${j}" style="width:auto">
+          <option value="always" ${!tr.when?'selected':''}>always</option>
+          <option value="when" ${tr.when?'selected':''}>when</option>
+        </select>
+        ${tr.when?`
+          <select data-rt="tr-path" data-i="${i}" data-j="${j}" style="width:auto">
+            ${condFields.map(f=>`<option value="${esc(f.name)}" ${tr.when.path===f.name?'selected':''}>${esc(f.label)} (${esc(f.name)})</option>`).join('')}
+          </select>
+          <span class="te-arrow">=</span>
+          ${p&&p.type==='boolean'
+            ? `<select data-rt="tr-val" data-i="${i}" data-j="${j}" data-bool="1" style="width:auto">
+                 <option value="true" ${tr.when.equals===true?'selected':''}>true</option>
+                 <option value="false" ${tr.when.equals===false?'selected':''}>false</option>
+               </select>`
+            : `<input type="text" data-rt="tr-val" data-i="${i}" data-j="${j}"
+                 value="${esc(tr.when.equals??'')}" placeholder="exact value" style="width:110px">`}`:''}
+        <span class="te-arrow">→</span>
+        <select data-rt="tr-to" data-i="${i}" data-j="${j}" style="flex:1;min-width:130px">
+          ${others.map(o=>`<option value="${esc(o.stepId)}" ${tr.to===o.stepId?'selected':''}>${esc(stepMeta(o).label)}</option>`).join('')}
+        </select>
+        <button class="btn sm ico" data-rt="tr-up" data-i="${i}" data-j="${j}" ${j===0?'disabled':''} title="Evaluate earlier">↑</button>
+        <button class="btn sm ico" data-rt="tr-down" data-i="${i}" data-j="${j}" ${j===list.length-1?'disabled':''} title="Evaluate later">↓</button>
+        <button class="btn sm ico" data-rt="del-tr" data-i="${i}" data-j="${j}" title="Remove">${I.trash}</button>
+      </div>`;
+    }).join('')
+    : `<div style="font-size:12.5px;color:var(--ink-3);padding:4px 0">${step.end
+        ?'No outgoing transitions — completing here finishes the process.'
+        :'None — a dead end. Add one, or mark this activity as an end.'}</div>`}
+    <button class="btn sm" data-rt="add-tr" data-i="${i}" style="margin-top:6px">${I.plus} Add transition</button>`;
 }
 
 function defaultsSummary(d,step){
@@ -228,7 +298,7 @@ function defaultsSummary(d,step){
   return vals.length ? vals.join(' · ') : 'no defaults set';
 }
 
-/* Both rule lists are TaskRule[] of kind 'data' — the same shape the gate uses. */
+/* Precondition rules are TaskRule[] of kind 'data' — the same shape the gate uses. */
 function ruleRows(runtime,which,i,dataParams,emptyText){
   const list = runtime[which]||[];
   return `
@@ -251,24 +321,129 @@ function ruleRows(runtime,which,i,dataParams,emptyText){
       style="margin-top:6px">${I.plus} Add condition</button>`;
 }
 
+/* ------------------------------------------------------- graph validation */
+function flowIssues(){
+  const flow = S.definition.taskFlow||[];
+  const out = [];
+  const starts = flow.filter(x=>x.start);
+  if(starts.length!==1) out.push(starts.length===0
+    ? 'No start activity — the run would have nowhere to begin.'
+    : 'More than one start activity — a run begins in exactly one place.');
+  if(!flow.some(x=>x.end)) out.push('No end activity — the process could never complete.');
+  flow.forEach(st=>{
+    const trs = rc(st).transitions;
+    const m = stepMeta(st);
+    if(!trs.length && !st.end) out.push(`"${m.label}" is a dead end — no transition and not an end.`);
+    const always = trs.filter(t=>!t.when);
+    if(always.length>1) out.push(`"${m.label}" has ${always.length} unconditional transitions — only the first can ever fire.`);
+    if(always.length===1 && trs.indexOf(always[0])!==trs.length-1)
+      out.push(`"${m.label}": the unconditional transition fires before later conditions — move it last.`);
+    trs.forEach(t=>{ if(!flow.some(x=>x.stepId===t.to))
+      out.push(`"${m.label}" routes to a missing activity (${t.to}).`); });
+    if(st.kind==='PLACEHOLDER' && !(st.possibleTasks||[]).length)
+      out.push(`Slot "${m.label}" has no eligible task types.`);
+  });
+  /* reachability from the start */
+  if(starts.length===1){
+    const seen = new Set([starts[0].stepId]);
+    const queue = [starts[0].stepId];
+    while(queue.length){
+      const id = queue.shift();
+      const st = flow.find(x=>x.stepId===id);
+      if(!st) continue;
+      (rc(st).transitions||[]).forEach(t=>{ if(!seen.has(t.to)){ seen.add(t.to); queue.push(t.to); } });
+    }
+    flow.filter(x=>!seen.has(x.stepId)).forEach(x=>
+      out.push(`"${stepMeta(x).label}" is unreachable from the start.`));
+  }
+  return out;
+}
+
+/* ------------------------------------------------------------ SVG overview */
+/* Read-only picture of the graph, redrawn on every render. Nodes sit in list
+   order; the arrows carry the truth. Forward edges run above the row, back
+   edges arc below, condition labels on the edge. */
+function flowSvg(){
+  const flow = S.definition.taskFlow||[];
+  if(!flow.length) return '';
+  const BW=138, GAP=26, Y=64, H=34;
+  const x = i => 12 + i*(BW+GAP);
+  const width = 12 + flow.length*(BW+GAP);
+  const idx = {}; flow.forEach((st,i)=>idx[st.stepId]=i);
+  const nodes = flow.map((st,i)=>{
+    const m = stepMeta(st);
+    const cls = st.kind==='PLACEHOLDER' ? 'stroke-dasharray="5 3"' : '';
+    const fill = st.start||st.end ? 'var(--ok-soft)' : 'var(--surface-2)';
+    const line = st.start||st.end ? 'var(--ok-line)' : 'var(--border-strong)';
+    const name = m.label.length>17 ? m.label.slice(0,16)+'…' : m.label;
+    return `<g>
+      <rect x="${x(i)}" y="${Y}" width="${BW}" height="${H}" rx="6" fill="${fill}" stroke="${line}" ${cls}/>
+      <text x="${x(i)+BW/2}" y="${Y+21}" text-anchor="middle" fill="var(--ink-2)"
+        style="font:600 11px var(--sans)">${esc(name)}</text>
+      ${st.start?`<text x="${x(i)+8}" y="${Y-6}" fill="var(--ok)" style="font:700 10px var(--mono)">● start</text>`:''}
+      ${st.end?`<text x="${x(i)+BW-8}" y="${Y-6}" text-anchor="end" fill="var(--ok)" style="font:700 10px var(--mono)">end ◉</text>`:''}
+    </g>`;
+  }).join('');
+  let edges='';
+  flow.forEach((st,i)=>{
+    (rc(st).transitions||[]).forEach(tr=>{
+      const j = idx[tr.to]; if(j===undefined) return;
+      const label = tr.when ? describeTransition(tr) : '';
+      const x1=x(i)+BW, x2=x(j), midY=Y+H/2;
+      if(j===i+1){
+        edges += `<path d="M${x1} ${midY} L${x2-2} ${midY}" class="fedge"/>`;
+        if(label) edges += `<text x="${(x1+x2)/2}" y="${midY-7}" text-anchor="middle" class="elabel">${esc(label)}</text>`;
+      } else if(j>i){
+        const ax1=x(i)+BW/2, ax2=x(j)+BW/2, top=Y-26-(j-i)*4;
+        edges += `<path d="M${ax1} ${Y} C ${ax1} ${top}, ${ax2} ${top}, ${ax2} ${Y-1}" class="fedge"/>`;
+        if(label) edges += `<text x="${(ax1+ax2)/2}" y="${top+11}" text-anchor="middle" class="elabel">${esc(label)}</text>`;
+      } else {
+        const ax1=x(i)+BW/2, ax2=x(j)+BW/2, bot=Y+H+30+(i-j)*4;
+        edges += `<path d="M${ax1} ${Y+H} C ${ax1} ${bot}, ${ax2} ${bot}, ${ax2} ${Y+H+1}" class="bedge"/>`;
+        edges += `<text x="${(ax1+ax2)/2}" y="${bot-5}" text-anchor="middle" class="elabel warn">${esc(label||'always')}</text>`;
+      }
+    });
+  });
+  return `<div class="graph" style="padding:0 0 10px">
+    <svg width="${width}" height="176" role="img" aria-label="The activity graph">
+      <defs><marker id="fa" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+        <path d="M0 0 L8 4 L0 8 z" fill="var(--border-strong)"/></marker></defs>
+      <style>
+        .fedge{fill:none;stroke:var(--border-strong);stroke-width:1.4;marker-end:url(#fa)}
+        .bedge{fill:none;stroke:var(--warn);stroke-width:1.4;stroke-dasharray:4 3;marker-end:url(#fa)}
+        .elabel{fill:var(--ink-3);font:500 10px var(--mono)}
+        .elabel.warn{fill:var(--warn)}
+      </style>
+      ${edges}${nodes}
+    </svg>
+  </div>`;
+}
+
 function defFlow(){
   const flow = S.definition.taskFlow||[];
   const uses = S.requests.length;
+  const issues = flowIssues();
   return `<div style="padding:15px">
     <p style="margin:0 0 4px;color:var(--ink-3);font-size:13px">
-      The ordered steps every request of this type starts with. Creating a request instantiates this
-      flow — the requester gets the process, not an empty list.</p>
-    <p style="margin:0 0 14px;color:var(--ink-3);font-size:12.5px">
-      Steps run in order. A step may be <b>skipped</b> by a condition, but there is no branching and
-      no parallelism — that is deliberate, and it is the line that keeps this from becoming a second
-      workflow engine.</p>
+      The activity graph every request of this type starts with. Creating a request instantiates
+      it — the requester gets the process, not an empty list.</p>
+    <p style="margin:0 0 12px;color:var(--ink-3);font-size:12.5px">
+      One token walks the arrows: transitions route on a field's value, and may loop back — an
+      approval answered <span class="mono">approved = false</span> returns to the draft. No
+      branching into parallel work; that is deliberate, and it is the line that keeps this from
+      becoming a second workflow engine.</p>
+
+    ${flowSvg()}
+
+    ${issues.length?`<div class="rulenote" style="margin:0 0 12px">${I.warn}<div>
+      ${issues.map(esc).join('<br>')}</div></div>`:''}
 
     <div class="flowlist">
       ${flow.length? flow.map(flowStep).join('')
-        : `<div class="empty">No steps yet. A request created from this type would start empty.</div>`}
+        : `<div class="empty">No activities yet. A request created from this type would start empty.</div>`}
     </div>
     <div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-      <button class="btn" data-rt="add-step">${I.plus} Add a step</button>
+      <button class="btn" data-rt="add-step">${I.plus} Add an activity</button>
       <span class="hint">${uses} existing request${uses===1?'':'s'} — already instantiated, and
         unaffected by changes here.</span>
     </div>
@@ -290,8 +465,12 @@ function dataParamUses(name){
   });
   (S.definition.taskFlow||[]).forEach(st=>{
     const c=st.runtimeConfig||{};
-    [...(c.skipWhen||[]),...(c.requires||[])].forEach(rule=>{ if(rule.path===name)
-      uses.push(`a rule on the "${st.taskDefinition}" step`); });
+    (c.requires||[]).forEach(rule=>{ if(rule.path===name)
+      uses.push(`a precondition on "${stepMeta(st).label}"`); });
+    (c.transitions||[]).forEach(tr=>{ if(tr.when && tr.when.path===name)
+      uses.push(`a transition on "${stepMeta(st).label}"`); });
+    (c.display||[]).forEach(n=>{ if(n===name)
+      uses.push(`shown to the person on "${stepMeta(st).label}"`); });
   });
   (S.definition.executionRules||[]).forEach(rule=>{ if(rule.kind==='data'&&rule.path===name)
     uses.push('an execution rule'); });
@@ -374,12 +553,16 @@ function dlgAddStep(){
       <button class="iconbtn" data-act="close">${I.cross}</button></div>
     <div class="dbody">
       <p style="margin:0;color:var(--ink-3);font-size:13px">
-        It goes at the end; reorder it with the arrows. The catalogue is authored under
-        <b>Task types</b>.</p>
+        It goes at the end of the list; wire it in with transitions. The task catalogue is
+        authored under <b>Task types</b>.</p>
       <div class="tiles">
         ${Object.values(TASK_DEFS).map(d=>`<button class="tile" data-rt="pick-step" data-def="${d.name}">
           <span class="ti">${d.icon}</span><b>${esc(d.label)}</b><small>${esc(d.desc)}</small>
         </button>`).join('')}
+        <button class="tile" data-rt="pick-step" data-def="__placeholder">
+          <span class="ti">${I.plus}</span><b>Placeholder</b><small>A designed slot the requester
+          may fill at runtime from a list of eligible task types.</small>
+        </button>
       </div>
     </div>
   </div>`);
@@ -481,10 +664,29 @@ document.addEventListener('click', e=>{
     case 'add-step': dlgAddStep(); break;
     case 'pick-step':{
       const id = 's'+(++S.seq);
-      flow.push({stepId:id, taskDefinition:btn.dataset.def, required:false, defaults:{},
-        runtimeConfig:{onRefusal:null, skipWhen:[], requires:[]}});
+      const base = {stepId:id, start:!flow.some(x=>x.start), end:false,
+        runtimeConfig:{assignedRoles:[], dueBy:null, requires:[], transitions:[]}};
+      if(btn.dataset.def==='__placeholder'){
+        flow.push(Object.assign(base, {kind:'PLACEHOLDER', label:'Additional steps', possibleTasks:[]}));
+      }else{
+        flow.push(Object.assign(base, {taskDefinition:btn.dataset.def, defaults:{}}));
+      }
       S.flowOpen = id;
-      closeModal(); render(); toast('Step added — set its defaults'); break;
+      closeModal(); render(); toast('Activity added — wire it in with transitions'); break;
+    }
+    case 'add-tr':{
+      const others = flow.filter(x=>x!==flow[i]);
+      rc(flow[i]).transitions.push({when:null, to:(others[0]||flow[i]).stepId});
+      render(); break;
+    }
+    case 'del-tr': rc(flow[i]).transitions.splice(+btn.dataset.j,1); render(); break;
+    case 'tr-up':{
+      const l=rc(flow[i]).transitions, j=+btn.dataset.j;
+      [l[j-1],l[j]]=[l[j],l[j-1]]; render(); break;
+    }
+    case 'tr-down':{
+      const l=rc(flow[i]).transitions, j=+btn.dataset.j;
+      [l[j+1],l[j]]=[l[j],l[j+1]]; render(); break;
     }
     case 'add-rule':
       (rc(flow[i])[btn.dataset.w] = rc(flow[i])[btn.dataset.w]||[])
@@ -509,9 +711,43 @@ document.addEventListener('change', e=>{
   const rt = el.dataset.rt; if(!rt) return;
   const flow = S.definition.taskFlow;
   const i = +el.dataset.i;
-  if(rt==='required'){ flow[i].required = el.checked; render(); return; }
   if(rt==='cfg'){ flow[i].defaults[el.dataset.k] = el.value; render(); return; }
-  if(rt==='onrefusal'){ rc(flow[i]).onRefusal = el.value || null; render(); return; }
+  if(rt==='start'){
+    /* exactly one start: setting it here clears it everywhere else */
+    if(el.checked){ flow.forEach(x=>{ x.start=false; }); flow[i].start=true; }
+    else flow[i].start=false;
+    render(); return;
+  }
+  if(rt==='end'){ flow[i].end = el.checked; render(); return; }
+  if(rt==='plabel'){ flow[i].label = el.value; render(); return; }
+  if(rt==='ptask'){
+    const list = flow[i].possibleTasks = flow[i].possibleTasks||[];
+    if(el.checked){ if(!list.includes(el.dataset.name)) list.push(el.dataset.name); }
+    else flow[i].possibleTasks = list.filter(x=>x!==el.dataset.name);
+    render(); return;
+  }
+  if(rt==='tr-kind'){
+    const tr = rc(flow[i]).transitions[+el.dataset.j];
+    if(el.value==='always') tr.when = null;
+    else{
+      const f = S.definition.dataParameters.find(p=>p.type==='boolean')
+             || S.definition.dataParameters[0];
+      tr.when = {path:f?f.name:'', equals:f&&f.type==='boolean'?true:''};
+    }
+    render(); return;
+  }
+  if(rt==='tr-path'){
+    const tr = rc(flow[i]).transitions[+el.dataset.j];
+    const f = S.definition.dataParameters.find(p=>p.name===el.value);
+    tr.when = {path:el.value, equals:f&&f.type==='boolean'?true:''};
+    render(); return;
+  }
+  if(rt==='tr-val'){
+    const tr = rc(flow[i]).transitions[+el.dataset.j];
+    tr.when.equals = el.dataset.bool ? el.value==='true' : el.value;
+    render(); return;
+  }
+  if(rt==='tr-to'){ rc(flow[i]).transitions[+el.dataset.j].to = el.value; render(); return; }
   if(rt==='wrole'){
     const roles = rc(flow[i]).assignedRoles, role = el.dataset.role;
     if(el.checked){ if(!roles.includes(role)) roles.push(role); }
@@ -519,6 +755,12 @@ document.addEventListener('change', e=>{
     render(); return;
   }
   if(rt==='dueby'){ rc(flow[i]).dueBy = el.value.trim() || null; render(); return; }
+  if(rt==='dshow'){
+    const list = rc(flow[i]).display;
+    if(el.checked){ if(!list.includes(el.dataset.name)) list.push(el.dataset.name); }
+    else rc(flow[i]).display = list.filter(x=>x!==el.dataset.name);
+    render(); return;
+  }
   if(rt==='rule-path'){ rc(flow[i])[el.dataset.w][+el.dataset.j].path = el.value; render(); return; }
   if(rt==='rule-op'){ rc(flow[i])[el.dataset.w][+el.dataset.j].op = el.value; render(); return; }
 });
@@ -546,6 +788,8 @@ document.head.insertAdjacentHTML('beforeend', `<style>
 .flowbody h4.rtsec{margin-top:16px;padding-top:13px;border-top:1px solid var(--border-strong);
   color:var(--accent)}
 .flowbody h5{margin:14px 0 5px;font-size:12.5px;font-weight:600;color:var(--ink)}
+.flowstep.slotstep{border-style:dashed}
+.flowstep.slotstep .task-ico{color:var(--accent)}
 .flowbody .hint{display:block;margin-bottom:8px}
 .flowbody .formgrid{grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px}
 </style>`);

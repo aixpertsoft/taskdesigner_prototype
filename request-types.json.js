@@ -8,10 +8,9 @@
 
    SHAPE
      id, name, description   identity
-     onError                 STOP | CONTINUE, when a task fails mid-run
      executionRules          gate the WHOLE run before it starts
      dataParameters          the fields a request carries
-     taskFlow                the ordered steps a new request is created with
+     taskFlow                the ACTIVITY GRAPH a new request is created with
 
      dataParameters[].owner
        AUTHOR     the requester's field. Inside the approval hash, so changing
@@ -19,51 +18,64 @@
        EXECUTION  written by a task's output mapping. Outside the hash — which
                   is why a run does not dismiss its own approvals.
 
-     taskFlow[]
-       AUTHORING — what the requester gets, and what they may change
-         stepId          stable id, so a step survives being reordered
-         taskDefinition  name from task-definitions.json
-         required        the requester may not remove this step
-         defaults        pre-filled into the task item at creation
+     taskFlow[] — one entry per ACTIVITY. List order is layout order only; the
+     execution order is defined by the transitions.
+       stepId          stable id; transitions refer to it
+       taskDefinition  name from task-definitions.json (absent on a placeholder)
+       kind            "PLACEHOLDER" marks a designed slot: at runtime it shows
+                       as an "Add task" button, and the requester may fill it
+                       with any of `possibleTasks`, in order. Empty = pass-through.
+       start / end     exactly one activity is the start; one or more are ends.
+                       A completed end with no matching transition completes
+                       the run.
+       defaults        pre-filled into the task item at creation
 
-       runtimeConfig — how the ENGINE behaves at this step. None of it is shown
-       to the requester or editable by them; all of it is inside the approval
-       hash, because what an approver approved includes how the step behaves.
-         assignedRoles   who may carry out a manual step — anyone holding one of
-                         these roles. Empty falls back to Administrator.
+       runtimeConfig — how the ENGINE behaves at this activity. None of it is
+       shown to the requester or editable by them; all of it is inside the
+       approval hash, because what an approver approved includes how the
+       process routes.
+         assignedRoles   who may carry out a manual step — anyone holding one
+                         of these roles. Empty falls back to Administrator.
          dueBy           when the step is due, shown on the work item
-         onRefusal       what declining does: "Send back" (default), "Fail the
-                         task", or "Not allowed". null falls back to the task
-                         type's own onRefusalDefault.
-         skipWhen        TaskRule[] — if satisfied when the run arrives, the step
-                         is marked SKIPPED and the run carries on
-         requires        TaskRule[] — if not satisfied, the run parks on a blocker.
-                         These cannot be executionRules: the value they need may
-                         be produced by an earlier step, so they are only knowable
-                         at run time.
+         requires        TaskRule[] — if not satisfied, the run parks on a
+                         blocker. These cannot be executionRules: the value may
+                         be produced by an earlier activity.
+         display         which request-data fields the completion dialog shows
+                         the person, by name. Empty-valued fields are omitted,
+                         so the draft can list approvalNote and show it only on
+                         a redo after a rejection. Presentation only — it is
+                         deliberately NOT part of the approval hash.
+         transitions     the outgoing edges, evaluated IN ORDER after the
+                         activity completes; first match wins.
+                           {"when": null, "to": "sX"}          always fires
+                           {"when": {"path": "approved",       fires when the
+                                     "equals": false},          request-data
+                            "to": "s1"}                         field equals
+                         A condition is one structured equality against request
+                         data (boolean or string). No expressions — the same
+                         doctrine as everywhere else in this design.
 
-   The flow is LINEAR by design. Steps run in order and a step may be skipped;
-   there is no branching, no parallelism and no loops. That is the line between
-   this subsystem and de.comconsult.wf, and it is meant to hold.
+   The flow is a SINGLE-TOKEN STATE MACHINE. Conditional routing and loops are
+   in; parallelism, fork/join, sub-processes and timers are out. That is the
+   line between this subsystem and de.comconsult.wf, and it is meant to hold.
 
    FUTURE SAFETY
-     - apiVersion is checked on load; unknown majors are refused, not guessed at.
-     - Everything is a named key. No positional arrays, no tuples, no ordering
-       significance except taskFlow itself, which is ordered on purpose.
-     - Every union carries an explicit discriminator: rules have `kind`, data
-       parameters have `owner` and `type`. Nothing is inferred from shape.
-     - References are by name (`taskDefinition`, `path`, `roles`), never by index.
-     - Unknown fields are preserved across an import/export round-trip, so a
-       newer file edited by an older client does not silently lose data.
+     - apiVersion is checked on load; unknown majors are refused, not guessed
+       at. v2 introduced transitions/start/end and removed onRefusal, skipWhen
+       and onError — a v1 document is refused rather than half-read.
+     - Everything is a named key; references are by name, never by index.
+     - Every union carries an explicit discriminator: rules have `kind`,
+       parameters have `owner` and `type`, placeholder activities have
+       `kind: "PLACEHOLDER"`. Nothing is inferred from shape.
+     - Unknown fields are preserved across an import/export round-trip.
    =========================================================================== */
 window.REQUEST_TYPES = {
-  "apiVersion": "aixboms.requesttype/v1",
+  "apiVersion": "aixboms.requesttype/v2",
   "requestTypes": [
     {
       "id": "maintenance-notification",
       "name": "Maintenance Notification",
       "description": "Tell affected customers about planned maintenance, with proof of exactly what was sent and who approved it.",
-      "onError": "STOP",
 
       "executionRules": [
         {"kind": "approvals", "min": 1, "roles": ["Administrator"], "excludeRequester": true},
@@ -88,6 +100,8 @@ window.REQUEST_TYPES = {
          "defaultValue": ""},
         {"name": "signedAt", "label": "Signed at", "type": "text", "owner": "EXECUTION",
          "defaultValue": ""},
+        {"name": "approved", "label": "Wording approved", "type": "boolean", "owner": "EXECUTION",
+         "defaultValue": false},
         {"name": "approvalNote", "label": "Approver comment", "type": "text", "owner": "EXECUTION",
          "defaultValue": ""},
         {"name": "sendStatus", "label": "Delivery status", "type": "text", "owner": "EXECUTION",
@@ -100,53 +114,66 @@ window.REQUEST_TYPES = {
         {
           "stepId": "s1",
           "taskDefinition": "draftNotification",
-          "required": true,
+          "start": true,
+          "end": false,
           "defaults": {},
           "runtimeConfig": {
             "assignedRoles": ["NetOps"],
             "dueBy": "11.09.2026",
-            "onRefusal": "Send back",
-            "skipWhen": [],
-            "requires": []
-          }
-        },
-        {
-          "stepId": "s2",
-          "taskDefinition": "signNotification",
-          "required": true,
-          "defaults": {"signedBy": "AixBOMS Change Management"},
-          "runtimeConfig": {
-            "assignedRoles": [],
-            "dueBy": null,
-            "onRefusal": null,
-            "skipWhen": [],
-            "requires": []
+            "display": ["approvalNote"],
+            "requires": [],
+            "transitions": [
+              {"when": {"path": "skipApproval", "equals": true}, "to": "p1"},
+              {"when": null, "to": "s3"}
+            ]
           }
         },
         {
           "stepId": "s3",
           "taskDefinition": "approveNotification",
-          "required": false,
+          "start": false,
+          "end": false,
           "defaults": {},
           "runtimeConfig": {
             "assignedRoles": ["Administrator"],
             "dueBy": "12.09.2026",
-            "onRefusal": "Send back",
-            "skipWhen": [{"kind": "data", "path": "skipApproval", "op": "truthy"}],
-            "requires": []
+            "display": ["notificationSubject", "notificationBody", "recipients"],
+            "requires": [],
+            "transitions": [
+              {"when": {"path": "approved", "equals": false}, "to": "s1"},
+              {"when": null, "to": "p1"}
+            ]
+          }
+        },
+        {
+          "stepId": "p1",
+          "kind": "PLACEHOLDER",
+          "label": "Additional steps",
+          "possibleTasks": ["signNotification", "approveNotification"],
+          "start": false,
+          "end": false,
+          "runtimeConfig": {
+            "assignedRoles": [],
+            "dueBy": null,
+            "display": [],
+            "requires": [],
+            "transitions": [
+              {"when": null, "to": "s4"}
+            ]
           }
         },
         {
           "stepId": "s4",
           "taskDefinition": "sendNotification",
-          "required": true,
+          "start": false,
+          "end": true,
           "defaults": {"fromAddress": "change@aixpertsoft.de"},
           "runtimeConfig": {
             "assignedRoles": [],
             "dueBy": null,
-            "onRefusal": null,
-            "skipWhen": [],
-            "requires": [{"kind": "data", "path": "sha256", "op": "truthy"}]
+            "display": [],
+            "requires": [],
+            "transitions": []
           }
         }
       ]

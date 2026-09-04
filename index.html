@@ -60,9 +60,10 @@
 let S;
 
 /* One worked example: the notification a network operator has to send customers
-   before planned maintenance. Four steps — a person drafts it, the server
-   fingerprints the exact wording, an administrator approves that wording, the
-   server sends it and records what the mail server answered. */
+   before planned maintenance. A person drafts it, an administrator approves the
+   exact wording (or the process loops back on their answer), a designed slot may
+   hold an optional digital signature, and the server sends it and records what
+   the mail server answered. */
 
 /* Creating a request instantiates the request type's task flow. The step's rules
    are copied onto the task item, not referenced: a request is bound to the flow
@@ -72,17 +73,21 @@ function instantiateFlow(definition, seqBase){
   let n = seqBase;
   const copy = x => JSON.parse(JSON.stringify(x));
   return (definition.taskFlow||[]).map(step=>({
-    id:'ti'+(++n), def:step.taskDefinition, stepId:step.stepId, required:!!step.required,
+    id:'ti'+(++n), def:step.taskDefinition||null, stepId:step.stepId,
+    kind:step.kind||'TASK',
+    label:step.label||null,                          /* placeholders name themselves */
+    possibleTasks:copy(step.possibleTasks||[]),
+    start:!!step.start, end:!!step.end,
     status:'NOT_RUN', attempts:0,
     config:copy(step.defaults||{}),
     /* runtimeConfig is the administrator half: how the engine behaves at this
-       step. It sits on the item rather than in its config, so it never appears
-       in the task form the requester fills in. */
-    onRefusal:(step.runtimeConfig||{}).onRefusal || null,
+       activity — including where the process goes next. The request owns its
+       copy of the graph, so template edits never touch in-flight requests. */
     assignedRoles:copy((step.runtimeConfig||{}).assignedRoles||[]),
     dueBy:(step.runtimeConfig||{}).dueBy || null,
-    skipWhen:copy((step.runtimeConfig||{}).skipWhen||[]),
+    display:copy((step.runtimeConfig||{}).display||[]),
     requires:copy((step.runtimeConfig||{}).requires||[]),
+    transitions:copy((step.runtimeConfig||{}).transitions||[]),
   }));
 }
 function seed(){
@@ -192,16 +197,18 @@ function tipPanel(){
       <li>Open the request and press <b>Execute all tasks</b>. It runs step 1 and stops — a person
         has to draft the notification.</li>
       <li>You are <b>M. Browett</b> (NetOps), so it is yours. Press <b>Draft</b> and write the
-        notification. The server fingerprints it, then parks again for an administrator.</li>
-      <li>Switch to <b>K. Weber</b> (top right). <i>Awaiting my action</i> shows 1. Approve the
-        wording — the mail sends by itself.</li>
-      <li>Watch the <b>Data</b> tab fill in as it goes: subject, text, fingerprint, delivery status.</li>
-      <li>To see a failure, put an address at <span class="mono">@invalid.example</span> in the
-        recipients.</li>
-      <li>Tick <b>Skip the approval step</b> on the Data tab — your approval is dismissed, because
-        that flag is now inside the hash. Re-approve, execute, and step 3 is <i>skipped</i>.</li>
-      <li>Switch to <b>Designer</b> (top left) to see where those four steps come from — the
-        request type's task flow. A new request is created with the whole process already in it.</li>
+        notification. The process routes straight on and parks for an administrator.</li>
+      <li>Switch to <b>K. Weber</b> (top right). <i>Awaiting my action</i> shows 1. Tick
+        <b>Approve the wording</b> and submit — the mail sends by itself.</li>
+      <li>Or answer <b>no</b> with a reason: the process walks <i>back</i> to the draft. The
+        transitions route on her answer — there is no decline button.</li>
+      <li>Watch the <b>Data</b> tab fill in as it goes: subject, text, decision, delivery
+        status.</li>
+      <li>The slot between approval and send is a designed <b>Add task</b> button — fill it with a
+        <b>Sign notification</b> and the send carries a fingerprint of the approved wording.
+        Approvals are dismissed when you fill it, because the plan changed.</li>
+      <li>Switch to <b>Designer</b> (top left): the activity graph these steps come from, with the
+        approved-=-false edge looping back, is drawn above the step list.</li>
     </ol>
     <div class="tipfoot">Everything runs in your browser. The approval rules, the frozen plan and the
       execution gate are the real logic from the specification — Execute is genuinely blocked until
@@ -273,8 +280,8 @@ document.addEventListener('click', e=>{
       render(); toast(act==='post-cr'?'Change requested':'Comment added'); break;
     }
 
-    case 'add-task':    dlgAddTask(+(btn.dataset.at ?? r.taskItems.length)); break;
-    case 'pick-task':   dlgConfigTask(btn.dataset.def, +btn.dataset.at); break;
+    case 'add-task':    dlgAddTask(btn.dataset.slot); break;
+    case 'pick-task':   dlgConfigTask(btn.dataset.def, btn.dataset.slot); break;
     case 'do-unblock':{
       const values = {};
       document.querySelectorAll('#modal [data-p]').forEach(el=>{ values[el.dataset.p]=el.value.trim(); });
@@ -300,22 +307,20 @@ document.addEventListener('click', e=>{
         break;
       }
       {
-        /* Ad-hoc tasks are never `required` — only steps that came from the flow are. */
-        const at = btn.dataset.at==='' ? r.taskItems.length
-                 : Math.max(0, Math.min(r.taskItems.length, +btn.dataset.at));
-        r.taskItems.splice(at, 0, {id:'ti'+(++S.seq), def:defName, status:'NOT_RUN',
-          attempts:0, config:cfg, required:false, skipWhen:[], requires:[]});
-        note(r,`added a ${def.label} task at position ${at+1}`);
-        toast('Task added');
+        const fill = fillSlot(r, btn.dataset.slot, defName, cfg);
+        if(!fill){ toast('That slot is gone'); break; }
+        note(r,`added a ${def.label} task into "${r.taskItems.find(x=>x.id===btn.dataset.slot).label||'the slot'}"`);
+        toast('Task added — approvals now cover it');
       }
       r.version++;
       closeModal(); render(); break;
     }
     case 'del-task':{
-      r.taskItems=r.taskItems.filter(t=>t.id!==btn.dataset.id);
-      r.logs=r.logs.filter(l=>l.taskId!==btn.dataset.id);
-      note(r,'removed a task'); r.version++;
-      render(); toast('Task removed'); break;
+      /* Only slot fills are removable, and removal re-splices the graph so the
+         token walks past where the task used to be. */
+      unfillSlot(r, btn.dataset.id);
+      note(r,'removed an added task'); r.version++;
+      render(); toast('Task removed — approvals now cover the plan without it'); break;
     }
     case 'show-log': dlgLog(btn.dataset.id); break;
     case 'show-submission': dlgSubmission(btn.dataset.id); break;
@@ -327,20 +332,19 @@ document.addEventListener('click', e=>{
       if(w && w.kind==='BLOCKER') dlgBlocker(w.id); else dlgSign(btn.dataset.id);
       break;
     }
-    case 'do-sign': case 'do-refuse':{
+    case 'do-sign':{
       const w=r.workItems.find(x=>x.id===btn.dataset.id);
       const def=TASK_DEFS[r.taskItems.find(t=>t.id===w.taskItemId).def];
       const result={};
-      document.querySelectorAll('#modal [data-p]').forEach(el=>{ result[el.dataset.p]=el.value.trim(); });
-      if(act==='do-refuse'){
-        /* The reason lives in the last result field, whatever the definition called it. */
-        const last = def.resultParams[def.resultParams.length-1];
-        const reason = last ? String(result[last.name]||'').trim() : '';
-        if(!reason){ toast(`Declining needs a reason — use the ${last?last.label:'last'} field`); break; }
-        rejectWorkItem(w.id, reason); break;
-      }
+      document.querySelectorAll('#modal [data-p]').forEach(el=>{
+        result[el.dataset.p] = el.dataset.bool ? el.checked : el.value.trim();
+      });
+      /* A required boolean is answered either way — "no" is a valid answer,
+         and often the one the transitions route on. */
       let missing=null;
-      def.resultParams.forEach(p=>{ if(p.required && !result[p.name]) missing=missing||p.label; });
+      def.resultParams.forEach(p=>{
+        if(p.required && p.type!=='boolean' && !result[p.name]) missing=missing||p.label;
+      });
       if(missing){ toast(`${missing} is required`); break; }
       completeWorkItem(w.id, result); break;
     }

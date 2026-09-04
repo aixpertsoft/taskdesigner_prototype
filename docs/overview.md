@@ -49,11 +49,11 @@ generated from what the server declares about that task type.
 Adding a new kind of task means writing a server-side executor and nothing else. No new screen, no
 new dialog, no change to the request editor.
 
-**A `WorkItem`** is a step only a person can carry out — a document that must be signed before the
-next task files it. It is a task type like any other, so the requester puts it in the plan and
-reviewers approve it along with everything else. Execution parks there and resumes the moment the
-person closes it. Whether it may be *declined* — and whether declining sends the request back, fails
-it, or is refused outright — is configured per step and approved along with the rest of the plan.
+**A `WorkItem`** is a step only a person can carry out — a wording that must be approved before it
+reaches customers. Execution parks there and resumes the moment the person closes it. Their answer
+is data on the request, and the flow's **transitions** route on it: `approved = false` walks the
+process back to the draft, `true` carries it forward. The routing is configured per activity and
+approved along with the rest of the plan.
 
 ---
 
@@ -61,9 +61,10 @@ it, or is refused outright — is configured per step and approved along with th
 
 ### This does not replace the existing workflow engine
 
-The original requirements document said it should. It cannot: a flat list of tasks plus approvals is
-not a superset of parallel graphs, gates, routers and sub-processes. This is a second, simpler
-subsystem for a different job, and the two coexist. That removes migration of nine process
+The original requirements document said it should. It cannot: a single-token state machine — even
+with conditional routing and loops — is not a superset of parallel graphs, gates, routers and
+sub-processes. This is a second, simpler subsystem for a different job, and the two coexist. The
+line is parallelism: routing on a person's answer is in, running two branches at once is out. That removes migration of nine process
 definitions and thirty forms from the critical path, and lets the simple case ship without solving
 the hard one.
 

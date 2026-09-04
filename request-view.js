@@ -50,29 +50,48 @@ function viewRequest(){
 
 function paneTasks(r,gate){
   /* A run in flight freezes the plan: the hash it is executing must not move
-     under it, or half a plan runs under terms nobody approved. */
+     under it, or half a plan runs under terms nobody approved. The only way a
+     requester extends a plan is a placeholder slot the designer put there. */
   const locked = requestStatus(r)==='COMPLETED'||runInFlight(r);
-  /* An insert point between every pair of steps, so an extra task can go where it
-     belongs in the sequence rather than only at the end. */
-  const gap = i => locked ? '' :
-    `<div class="insert"><button data-act="add-task" data-at="${i}"
-       title="Insert a task here">${I.plus}</button></div>`;
   return `<div class="tasklist">
     ${r.taskItems.length
-      ? r.taskItems.map((t,i)=>gap(i)+taskCard(r,t,locked)).join('') + gap(r.taskItems.length)
+      ? r.taskItems.map(t=>t.kind==='PLACEHOLDER' ? slotCard(r,t,locked) : taskCard(r,t,locked)).join('')
       : `<div class="empty">No tasks yet. A request needs at least one task before it can be executed.</div>`}
-  </div>
-  <div class="addbar">
-    <button class="btn" data-act="add-task" data-at="${r.taskItems.length}" ${locked?'disabled':''}>${I.plus} Add task at the end</button>
   </div>
   ${gateBox(r,gate)}`;
 }
+
+/* A placeholder slot: the designed extension point, rendered as the Add button
+   the designer put into the process. Its fills appear as ordinary task cards,
+   marked "added", directly after it. */
+function slotCard(r,t,locked){
+  const eligible = (t.possibleTasks||[]).map(n=>TASK_DEFS[n]).filter(Boolean);
+  return `<article class="task slot">
+    <div class="task-top" style="align-items:center">
+      <div class="task-ico">${I.plus}</div>
+      <div class="task-main">
+        <div class="task-name"><strong>${esc(t.label||'Additional steps')}</strong>
+          <span class="pill neutral">optional</span></div>
+        <div class="task-note">A slot in the process — ${eligible.length
+          ? `may hold: ${eligible.map(d=>esc(d.label)).join(', ')}`
+          : 'no task types configured'}. Empty, the run passes straight through.</div>
+      </div>
+      <div class="task-acts">
+        <button class="btn sm" data-act="add-task" data-slot="${t.id}"
+          ${locked||!eligible.length?'disabled':''}
+          title="${locked?'The plan is frozen while a run is in progress':'Add a task into this slot'}">
+          ${I.plus} Add task</button>
+      </div>
+    </div>
+  </article>`;
+}
+
 function taskCard(r,t,locked){
   const def = TASK_DEFS[t.def];
   const tone = {NOT_RUN:'neutral',RUNNING:'blue',WAITING:'warn',SUCCEEDED:'ok',FAILED:'bad',
-                SKIPPED:'neutral'}[t.status];
+                }[t.status]||'neutral';
   const label= {NOT_RUN:'not run',RUNNING:'running…',WAITING:'waiting for a person',
-                SUCCEEDED:'succeeded',FAILED:'failed',SKIPPED:'skipped'}[t.status];
+                SUCCEEDED:'succeeded',FAILED:'failed'}[t.status]||t.status.toLowerCase();
   const taskLogs = r.logs.filter(l=>l.taskId===t.id);
   const last = taskLogs.slice(-1)[0];
   const logCount = taskLogs.length;
@@ -88,7 +107,7 @@ function taskCard(r,t,locked){
       <div class="task-main">
         <div class="task-name">
           <strong>${esc(def.label)}</strong>
-          ${t.stepId?'':`<span class="pill warn" title="Added to this request by hand — not part of the standard ${esc(S.definition.name)} flow">added</span>`}
+          ${t.fromSlot?`<span class="pill warn" title="Added to this request by hand, into a slot the process provides — not part of the standard ${esc(S.definition.name)} flow">added</span>`:''}
           ${def.manual?`<span class="pill neutral" title="No server executor — a person closes this one">manual</span>`:''}
           <span class="pill ${tone}">${t.status==='RUNNING'?I.spin:''}${label}</span>
           ${t.attempts>1?`<span class="pill neutral">attempt ${t.attempts}</span>`:''}
@@ -123,7 +142,6 @@ function taskCard(r,t,locked){
             ${canClear?`<button class="btn sm go" data-act="sign" data-id="${blocker.id}">Supply &amp; continue</button>`
                       :`<span class="pill neutral">not yours to clear</span>`}
           </div>`:''}
-        ${t.status==='SKIPPED'?`<div class="task-note">Skipped — ${esc(t.skipReason||'a skip rule matched')}.</div>`:''}
         ${t.status==='FAILED'? `<div class="task-err">${I.warn}<div>
             <div><b>Execution failed.</b> ${esc(t.error||'')}</div>
             ${t.errorSource?`<div class="mono" style="margin-top:3px;opacity:.85">${esc(t.errorSource)}</div>`:''}
@@ -132,11 +150,11 @@ function taskCard(r,t,locked){
       <div class="task-acts">
         <button class="btn sm ico" data-act="show-log" data-id="${t.id}"
           title="Execution log" aria-label="Execution log">${I.log}${logCount?`<span class="n">${logCount}</span>`:''}</button>
-        <button class="btn sm ico" data-act="del-task" data-id="${t.id}"
-          ${locked||t.required?'disabled':''}
-          title="${t.required?'Part of the '+esc(S.definition.name)+' process — cannot be removed'
-                             :'Remove this task'}"
-          aria-label="Remove this task">${I.trash}</button>
+        ${t.fromSlot?`<button class="btn sm ico" data-act="del-task" data-id="${t.id}"
+          ${locked?'disabled':''}
+          title="Remove this added task from its slot"
+          aria-label="Remove this task">${I.trash}</button>`
+        :''}
       </div>
     </div>
   </article>`;

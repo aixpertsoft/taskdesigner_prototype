@@ -3,7 +3,7 @@
 
    Execution rules gate the WHOLE run before it starts — they answer "may this
    request run at all?". They are not to be confused with a task flow step's own
-   skipWhen / requires, which answer "should this one step run, now?" and can only
+   requires and transitions, which answer "should this step run, and where next?" and can only
    be judged once the run is under way. Those live in request-type-editor.js.
 
    Two rule types, deliberately:
@@ -118,11 +118,6 @@ function defRules(){
       <div>No approvals rule, so the request editor shows no approvals rail — there is nobody to
         show. Add one and it comes back.</div></div>`:''}
 
-    <div class="rulenote" style="margin-top:9px">
-      <div><b>On failure:</b> ${S.definition.onError==='STOP'
-        ? 'stop — remaining tasks are left untouched.' : 'carry on with the remaining tasks.'}
-      <button class="btn sm ghost" data-er="onerror" style="margin-left:6px">Change</button></div>
-    </div>
   </div>`;
 }
 
@@ -142,9 +137,6 @@ document.addEventListener('click', e=>{
       toast(gone.kind==='approvals' ? 'Approvals no longer required' : 'Rule removed');
       break;
     }
-    case 'onerror':
-      S.definition.onError = S.definition.onError==='STOP'?'CONTINUE':'STOP';
-      render(); break;
   }
 });
 

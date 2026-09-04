@@ -15,16 +15,18 @@ knowledge to follow it: **the notification you have to send customers before pla
 
 > *TR-2087 — Notify customers, R12 uplink switch replacement*
 
-| # | Step | Kind | Who or what |
+| # | Activity | Kind | Who or what |
 | --- | --- | --- | --- |
 | 1 | Draft notification | **person** | NetOps writes the subject, the message and the recipient list |
-| 2 | Sign notification | server | `digitallySign` — a SHA-256 fingerprint of the exact wording |
-| 3 | Approve notification | **person** | An administrator approves that wording, before customers see it |
+| 2 | Approve notification | **person** | An administrator answers *Approve the wording?* — yes routes forward, no routes back to the draft |
+| 3 | Additional steps | **slot** | A designed extension point — may hold a *Sign notification* (a SHA-256 fingerprint of the wording) or a second approval |
 | 4 | Send notification | server | `sendMail` — delivers it and records what the mail server answered |
 
-The point of steps 2 and 3 together: the fingerprint makes *what was approved* and *what was sent*
-provably the same text. That is the thing an email thread and a verbal "yes, send it" cannot give
-you, and it is why this is worth a workflow at all.
+The approval is given on the text itself — the dialog shows the drafted wording before the decision.
+When portable proof is needed, the requester fills the slot with a **digital signature** and the
+send carries the fingerprint of exactly the wording that was approved. That record — who approved
+what, and optionally a cryptographic receipt of it — is what an email thread and a verbal "yes,
+send it" cannot give you, and it is why this is worth a workflow at all.
 
 ---
 
@@ -58,14 +60,17 @@ cause-and-effect between them stays demonstrable.
 2. Press **Execute all tasks**. It runs for half a second and **stops** — step 1 needs a person. The
    card turns amber: *Execution is parked here. Waiting for NetOps.*
 3. You are M. Browett, so it is yours. Press **Submit draft**, fill in a subject, a message and
-   recipients, and submit.
-4. Watch it continue on its own: the server fingerprints the text, then parks again — this time for
-   an **Administrator**.
-5. Switch to **K. Weber**. Her *Awaiting my action* tab shows **1**, and the row is flagged
-   *your turn*. Open it and press **Approve**. The dialog shows her the drafted text and its
-   fingerprint before she agrees to it.
-6. The mail sends by itself. Open the **Data** tab: subject, text, recipients, fingerprint, delivery
-   status and message id have all filled in during the run.
+   recipients, and submit. The process routes straight on to the approval and parks again — this
+   time for an **Administrator**.
+4. Switch to **K. Weber**. Her *Awaiting my action* tab shows **1**, and the row is flagged
+   *your turn*. Open it: the dialog shows the drafted text and what each answer will do. Tick
+   **Approve the wording** and press **Submit decision**. (Leave it unticked and the process walks
+   back to the draft instead — that is the transitions routing on her answer.)
+5. The mail sends by itself. Open the **Data** tab: subject, text, recipients, delivery status and
+   message id have all filled in during the run.
+6. Run it again, but first press **Add task** on the *Additional steps* slot and pick
+   **Sign notification** — approvals are dismissed because the plan changed, so re-approve. This
+   time the approved wording is fingerprinted and the send carries the signature.
 
 Nobody pressed a "continue" button at any point. Closing the human step *is* the resume.
 
@@ -140,7 +145,7 @@ succeeded and picks up where it failed.
 
 ---
 
-## Manual steps, and what declining means
+## Manual steps, and routing on the answer
 
 A manual step is not "a task that does nothing". It **creates a work item and suspends the run** until
 a person closes it — with an assignee, the payload they need to see, and a result it collects back.
@@ -165,35 +170,31 @@ same form, read-only, headed with who closed it and when. It is the form, not a 
 labels are the ones the person saw. Blocker values appear the same way, labelled from the data
 parameters they filled.
 
-It shows the **most recent close** only. If a step was declined and then redone, the view is the
-approval that stuck; the earlier decline stays on the record in the execution log and as the change
-request it raised, which is where you would look for it anyway.
+It shows the **most recent close** only. If a decision was answered *no* and the step later redone,
+the view is the answer that stuck; the earlier one stays on the record in the execution log.
 
-### Declining is a decision, not a breakage
+### Saying no is data, and the transitions route on it
 
-Marking a decline as *failed* is wrong by default: it paints a red error over a considered human
-answer and offers *re-run* as the recovery, when the real recovery is to send the request back to
-whoever can change it. So each manual step carries an **If declined** setting.
+There is no decline button. The approval form asks a question — **Approve the wording?** — and the
+person answers it; one submit button either way. What happens next is decided by the flow's
+**transitions**, and the dialog says so before they answer:
 
-It lives in the step's **Runtime configuration** — *Request types → Task flow*, open a manual step.
-The requester never sees it and cannot change it. Resolution order is: the flow step, then the task
-type's own `onRefusalDefault`, then *Send back*.
+> approved = false → Draft notification
+> approved = true → onward
 
-| Setting | What declining does |
-| --- | --- |
-| **Send back** *(default)* | The run ends, the step returns to *not run*, and **nothing is marked failed**. The reason is filed as an open change request, which turns the gate red until it is resolved. |
-| **Fail the task** | The task is marked failed and the run stops, exactly like a task that errored. |
-| **Not allowed** | There is no decline button at all. Complete it, or the run stays parked. |
+**Try it:** at the approval, leave the switch off and give a reason. The run walks **back** to the
+draft — a fresh work item for NetOps, attempt two, with everything previously entered still on the
+request. Nothing is marked failed, because nothing broke: someone answered a question. Redraft,
+and the corrected wording goes straight back for approval — the approver decides on the new text,
+not a memory of the old one — then onward to the send. Both attempts stay on the record.
 
-**Try it:** at step 3, press **Decline & send back** with a reason — say the window is wrong. Nothing
-turns red. The *Conversation* tab gains an open change request in K. Weber's name and the bar reads
-*1 thing still needs doing*. Resolve it and execute again: the draft and the signature are already
-done, so the run goes straight back to the approval.
+This replaced three older mechanisms — a configurable "If declined" policy, a separate "Skip when"
+rule, and a continue-past-failure switch — all of which were transitions wearing disguises. One
+routing concept now does all of it.
 
-**On "not allowed":** a work item nobody may decline could park forever, so two rules keep it honest.
-Cancelling a run is always available, and cancelling is the **requester's or an administrator's**
-call — never the assigned person's. Otherwise they simply cancel instead of declining and the setting
-means nothing. Try it as J. Novak: *Cancel run* is disabled.
+**Escape hatch:** a run parked on a step nobody answers can always be **cancelled** — by the
+requester or an administrator, never the assigned person, or a mandatory step would be defeated by
+cancelling instead of answering. Try it as J. Novak: *Cancel run* is disabled.
 
 ---
 
@@ -268,9 +269,9 @@ requester or editable by them, and none of it appears on the task form:
 | --- | --- |
 | **Who may carry it out** | The candidate roles for a manual step — anyone holding one of them sees it in *Awaiting my action* and may close it. Empty falls back to Administrator, so no step can park where nobody may ever act. |
 | **Due by** | Shown on the work item while the step waits. |
-| **If declined** | What declining does — *Send back*, *Fail the task*, or *Not allowed*. Leave it unset and the task type's own default applies. |
-| **Skip when** | Evaluated once, when the run reaches the step. If it matches, the step is recorded **skipped** and the run carries straight on. |
 | **Do not start until** | Checked at run time. If unsatisfied the run parks on a **blocker** until somebody supplies what is missing. |
+| **Shown to the person** | Which request fields the completion dialog displays — each activity shows only what its person needs. Empty fields are omitted, so the draft step lists the approver's comment and it appears only on a redo, carrying the reason. Presentation only; deliberately outside the approval hash. |
+| **Transitions** | The outgoing edges: evaluated in order once the activity completes, first match wins, *always* is the otherwise. A condition is one field compared to one value — `approved = false` back to the draft. |
 
 Assignment used to be an ordinary form field the engine recognised by name — which meant the
 requester could reassign the approval step to a role they hold. Now it is declared configuration:
@@ -281,32 +282,34 @@ In the JSON these three sit together under `runtimeConfig`, which is also how th
 them. All of it is inside the approval hash even so, because what an approver approved includes how
 the step behaves — not just what it is configured with.
 
-**The flow is linear on purpose.** Steps run in order and a step may be skipped; there is no
-branching, no parallelism, no loops. That is the line between this and `de.comconsult.wf` — a
-conditional skip is a one-armed router, and one arm is all this subsystem should grow. The moment
-"if X do A else do B" appears, you are rebuilding the engine the overview says this does not replace.
+**The flow is a single-token state machine, on purpose.** One token walks the arrows: transitions
+route on a field's value and may loop back, and exactly one activity is the start, one or more the
+ends. What stays out — deliberately — is parallelism: no fork/join, no sub-processes, no timers.
+That is the line between this and `de.comconsult.wf`; conditional routing on a person's answer is
+the everyday case this subsystem exists for, running two things at once is not.
 
 **Editing the template does not touch requests already raised.** A request snapshots its steps —
 including their rules — at creation. Same reasoning as `definitionVersion` in the specification.
 
-### Try the skip
+### Try the skip — it is just an edge
 
 Tick **Skip the approval step** on the Data tab. Two things happen:
 
 1. **Your approval is dismissed.** That flag is inside the approval hash, so changing it invalidates
    sign-off — exactly like editing a task does. Without that, you could get approval, then set the
-   flag, then execute, and the approval step would vanish with nothing invalidated. That is
-   approve-then-edit-then-execute wearing a different hat.
-2. Re-approve, execute, and step 3 is marked **skipped**. Not done, not failed — skipped, with the
-   reason, in the log.
+   flag, then execute, and the approval step would vanish with nothing invalidated.
+2. Re-approve and execute: after signing, the run takes the conditional edge
+   `skipApproval = true` straight past the approval, which is simply never entered. There is no
+   separate skip mechanism — it is one transition among the others, visible in the graph picture.
 
 ### Try the blocker
 
-Give the signing step a skip rule too, so no fingerprint is ever produced. Execute: the run reaches
-*Send notification*, finds its precondition unmet, and **parks on a blocker** — the same pause as a manual
-step, in the same inbox.
+In the designer, give *Send notification* a precondition: **do not start until the fingerprint is
+set**. Execute without filling the slot: the run reaches the send, finds the precondition unmet,
+and **parks on a blocker** — the same pause as a manual step, in the same inbox. Designer cause,
+runtime effect. Fill the slot with a signature instead, and the precondition passes on its own.
 
-**Why this cannot be a gate rule:** the fingerprint does not exist until the signing step has run.
+**Why this cannot be a gate rule:** the fingerprint does not exist until the signing task has run.
 Preconditions are the rules that can only be judged once the run is under way.
 
 **And even with no rule configured at all**, a server step cannot run before its inputs exist. The

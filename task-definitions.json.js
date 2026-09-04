@@ -30,9 +30,10 @@
          outputs = where each of its return values is stored on the request
 
      kind: "MANUAL"  ->  manualTaskConfig
-         resultParams     = what the PERSON supplies to close it
-         outputs          = where those answers are stored on the request
-         onRefusalDefault = what declining does, unless the task overrides it
+         resultParams = what the PERSON supplies to close it. Types: text, enum,
+                        boolean — a boolean answer is what the flow's transitions
+                        typically route on (approved = true / false).
+         outputs      = where those answers are stored on the request
 
    The three input source kinds are the only three there are — LITERAL,
    REQUEST_DATA, TASK_PARAM. Resolution is a dictionary lookup; nothing is
@@ -68,8 +69,7 @@ window.TASK_DEFINITIONS = {
           {"source": "subject",    "target": {"kind": "REQUEST_DATA", "path": "notificationSubject"}},
           {"source": "body",       "target": {"kind": "REQUEST_DATA", "path": "notificationBody"}},
           {"source": "recipients", "target": {"kind": "REQUEST_DATA", "path": "recipients"}}
-        ],
-        "onRefusalDefault": "Send back"
+        ]
       }
     },
     {
@@ -102,15 +102,16 @@ window.TASK_DEFINITIONS = {
       "kind": "MANUAL",
       "params": [],
       "manualTaskConfig": {
-        "completeLabel": "Approve",
+        "completeLabel": "Submit decision",
         "resultParams": [
+          {"name": "approved", "label": "Approve the wording", "type": "boolean", "required": true},
           {"name": "note", "label": "Comment", "type": "text",
-           "placeholder": "Optional — and the reason, if you decline"}
+           "placeholder": "Optional — and the reason, if you do not approve"}
         ],
         "outputs": [
-          {"source": "note", "target": {"kind": "REQUEST_DATA", "path": "approvalNote"}}
-        ],
-        "onRefusalDefault": "Send back"
+          {"source": "approved", "target": {"kind": "REQUEST_DATA", "path": "approved"}},
+          {"source": "note",     "target": {"kind": "REQUEST_DATA", "path": "approvalNote"}}
+        ]
       }
     },
     {

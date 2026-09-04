@@ -15,21 +15,24 @@ function openModal(html){
   const f = $('#modal input, #modal select, #modal button');
   if(f) f.focus();
 }
-function dlgAddTask(at){
+/* Filling a placeholder slot — the ONLY way a requester extends a plan. The
+   slot is a designed extension point: the request type decided where in the
+   graph it sits and which task types are eligible. */
+function dlgAddTask(slotId){
   const r = req();
-  const where = at>=r.taskItems.length
-    ? 'at the end of the list'
-    : `before <b>${esc(TASK_DEFS[r.taskItems[at].def].label)}</b>`;
+  const slot = r.taskItems.find(t=>t.id===slotId);
+  if(!slot) return;
+  const eligible = (slot.possibleTasks||[]).map(n=>TASK_DEFS[n]).filter(Boolean);
   openModal(`<div class="dialog" role="dialog" aria-modal="true" aria-label="Add task">
-    <div class="dhead"><h2>Add a task</h2>
+    <div class="dhead"><h2>Add a task — ${esc(slot.label||'Additional steps')}</h2>
       <button class="iconbtn" data-act="close">${I.cross}</button></div>
     <div class="dbody">
       <p style="margin:0;color:var(--ink-3);font-size:13px">
-        Pick the kind of work to add — it goes in ${where}. This list is the catalogue
-        authored under <b>Task types</b>.</p>
+        This slot was designed into the process; the request type decides which kinds of work may
+        go here. Adding one changes the plan, so approvals will need to be given again.</p>
       <div class="tiles">
-        ${Object.values(TASK_DEFS).map(d=>`<button class="tile" data-act="pick-task"
-            data-def="${d.name}" data-at="${at}">
+        ${eligible.map(d=>`<button class="tile" data-act="pick-task"
+            data-def="${d.name}" data-slot="${slot.id}">
           <span class="ti">${d.icon}</span><b>${esc(d.label)}</b><small>${esc(d.desc)}</small>
         </button>`).join('')}
       </div>
@@ -84,7 +87,7 @@ function dlgBlocker(workItemId){
    template steps take their values from the request type's flow defaults, and an
    ad-hoc task is initialised here, once. Changing your mind means remove and
    re-add — which moves the hash and dismisses approvals, as an edit should. */
-function dlgConfigTask(defName, at){
+function dlgConfigTask(defName, slotId){
   const def = TASK_DEFS[defName];
   const cfg = {};
   openModal(`<div class="dialog" role="dialog" aria-modal="true" aria-label="Add task">
@@ -124,7 +127,7 @@ function dlgConfigTask(defName, at){
     <div class="dfoot">
       <button class="btn" data-act="close">Cancel</button>
       <button class="btn primary" data-act="save-task" data-def="${defName}"
-        data-at="${at===undefined?'':at}">Add task</button>
+        data-slot="${slotId||''}">Add task</button>
     </div>
   </div>`);
 }
@@ -139,8 +142,8 @@ function dlgLog(taskId){
     <div class="dbody">
       ${logs.length? logs.map(l=>`<div class="logrow">
         <div class="loghead">
-          <span class="pill ${l.outcome==='SUCCEEDED'?'ok':l.outcome==='SENT_BACK'?'warn':'bad'}">${
-            l.outcome==='SUCCEEDED'?'succeeded':l.outcome==='SENT_BACK'?'sent back':'failed'}</span>
+          <span class="pill ${l.outcome==='SUCCEEDED'?'ok':l.outcome==='ROUTED'?'blue':'bad'}">${
+            l.outcome==='SUCCEEDED'?'succeeded':l.outcome==='ROUTED'?'routed':'failed'}</span>
           <span>Attempt ${l.attempt}</span>
           <span class="mono">${esc(l.at)}</span>
           <span class="mono">${esc(USERS[l.by].name)}</span>
@@ -232,8 +235,14 @@ function dlgSign(workItemId){
   const w = r.workItems.find(x=>x.id===workItemId);
   const t = r.taskItems.find(x=>x.id===w.taskItemId);
   const def = TASK_DEFS[t.def];
-  const mode = refusalMode(t);
-  openModal(`<div class="dialog" role="dialog" aria-modal="true" aria-label="Sign off">
+  /* One submit button, no decline path: what happens next is decided by the
+     flow's transitions, routing on what the person entered. Saying "no" is
+     data — approved unticked — not a different button. */
+  const routes = (t.transitions||[]).filter(x=>x.when).map(x=>{
+    const target = r.taskItems.find(y=>y.stepId===x.to);
+    return `${describeTransition(x)} → ${target?itemLabel(target):x.to}`;
+  });
+  openModal(`<div class="dialog" role="dialog" aria-modal="true" aria-label="Complete this step">
     <div class="dhead">
       <span style="color:var(--accent)">${def.icon}</span>
       <h2>${esc(def.label)} — ${esc(w.title)}</h2>
@@ -241,31 +250,32 @@ function dlgSign(workItemId){
     </div>
     <div class="dbody">
       ${w.context.length? `<div class="ctxbox">
-        <h4>What you are signing</h4>
-        ${w.context.map(c=>`<div class="ctxgrp"><b>${esc(c.label)}</b>
-          ${Object.entries(c.outputs).map(([k,v])=>
-            `<div class="ctxrow"><span>${esc(k)}</span><span class="mono">${esc(String(v))}</span></div>`).join('')}
-        </div>`).join('')}
-      </div>` : `<div class="empty">No preceding task handed anything forward.</div>`}
-      ${def.resultParams.map(p=>`<div class="field">
-        <label>${esc(p.label)} ${p.required?'<span class="req">*</span>':''}</label>
-        <input type="text" data-p="${p.name}" placeholder="${esc(p.placeholder||'')}"></div>`).join('')}
+        <h4>From the request</h4>
+        ${w.context.map(c=>
+          `<div class="ctxrow"><span>${esc(c.label)}</span><span class="mono">${esc(c.value)}</span></div>`).join('')}
+      </div>`:''}
+      ${def.resultParams.map(p=>{
+        if(p.type==='boolean') return `<div class="field">
+          <label>${esc(p.label)} ${p.required?'<span class="req">*</span>':''}</label>
+          <label class="switch"><input type="checkbox" data-p="${p.name}" data-bool="1">
+            <span class="track"></span><span>Yes</span></label></div>`;
+        if(p.type==='enum') return `<div class="field">
+          <label>${esc(p.label)} ${p.required?'<span class="req">*</span>':''}</label>
+          <select data-p="${p.name}">${(p.values||[]).map(o=>
+            `<option>${esc(o)}</option>`).join('')}</select></div>`;
+        return `<div class="field">
+          <label>${esc(p.label)} ${p.required?'<span class="req">*</span>':''}</label>
+          <input type="text" data-p="${p.name}" placeholder="${esc(p.placeholder||'')}"></div>`;
+      }).join('')}
       <div style="font-size:12px;color:var(--ink-3);border-top:1px solid var(--border);padding-top:11px">
-        Closing this work item lets <b>execution continue on its own</b> — the remaining tasks run
-        under the system identity, on behalf of ${esc(USERS[r.requester].name)}.
-        ${mode==='Not allowed'
-          ? `<div style="margin-top:7px;color:var(--warn)">${I.warn} This step <b>cannot be declined</b>.
-             If it should not go ahead, the requester or an administrator cancels the run.</div>`
-          : mode==='Fail the task'
-          ? `Declining marks this task <b>failed</b> and the run stops. Give the reason in the last field.`
-          : `Declining sends the request <b>back to ${esc(USERS[r.requester].name)}</b> as a change
-             request — nothing is marked failed. Give the reason in the last field.`}
+        Closing this work item lets <b>execution continue on its own</b> — under the system identity,
+        on behalf of ${esc(USERS[r.requester].name)}.
+        ${routes.length?`<div style="margin-top:6px">What happens next depends on what you enter:
+          ${routes.map(x=>`<div class="mono" style="margin-top:2px">${esc(x)}</div>`).join('')}</div>`:''}
       </div>
     </div>
     <div class="dfoot">
       <button class="btn" data-act="close">Cancel</button>
-      ${mode==='Not allowed'?'':`<button class="btn" data-act="do-refuse" data-id="${w.id}">
-        ${mode==='Fail the task'?'Decline':'Decline &amp; send back'}</button>`}
       <button class="btn go" data-act="do-sign" data-id="${w.id}">${I.check} ${esc(def.completeLabel||'Complete')}</button>
     </div>
   </div>`);

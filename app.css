@@ -270,16 +270,9 @@ textarea[readonly]{resize:vertical;line-height:1.5}
   color:var(--ink-3)}
 
 .addbar{margin-top:12px}
-/* Insert points between steps — quiet until you go near them. */
-.insert{height:0;display:flex;justify-content:center;position:relative;z-index:1}
-.insert button{
-  width:22px;height:22px;margin-top:-11px;border-radius:50%;padding:0;
-  border:1px solid var(--border);background:var(--surface);color:var(--ink-3);
-  display:grid;place-items:center;cursor:pointer;opacity:0;transition:opacity .12s;
-}
-.tasklist:hover .insert button{opacity:.55}
-.insert button:hover,.insert button:focus-visible{opacity:1;border-color:var(--accent);
-  background:var(--accent-soft);color:var(--accent)}
+/* placeholder slot cards */
+.task.slot{border-style:dashed;background:var(--surface-2);box-shadow:none}
+.task.slot .task-ico{background:var(--surface);color:var(--accent)}
 .databar{display:flex;gap:9px;align-items:center;padding:9px 13px;font-size:12.5px;
   background:var(--warn-soft);border-bottom:1px solid var(--warn-line);color:var(--warn)}
 

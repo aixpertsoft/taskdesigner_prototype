@@ -1,6 +1,14 @@
 /* ===========================================================================
-   Run engine — execution and every mutation: approvals, the cursor walk,
-   parking on work items and blockers, resume, decline, cancel.
+   Run engine — execution and every mutation: approvals, the graph walk,
+   parking on work items and blockers, routing, resume, cancel.
+
+   The flow is a SINGLE-TOKEN STATE MACHINE. A run holds one position — the
+   current activity — and moves along transitions: evaluated in order after the
+   activity completes, first match wins, `when: null` always fires. Taking a
+   transition RESETS its target to NOT_RUN, which is what makes loops re-execute
+   (approved=false walks back to the draft, and the draft parks again as a fresh
+   attempt). A completed end activity with no matching transition completes the
+   run. Conditional routing and loops are in; parallelism is not.
 
    Part of the split prototype: classic scripts sharing one global scope, so
    this file may call anything its siblings declare — resolution happens at
@@ -25,15 +33,31 @@ function unapprove(){
   note(r,'withdrew their review'); r.version++;
   render(); toast('Withdrawn');
 }
-/* ---------------------------------------------------------------
-   Execution runs.
 
-   A run walks the task list with a cursor. An automatic task is
-   dispatched to its executor; a manual task creates a work item and
-   the run parks itself until a human closes it. Completing the work
-   item resumes the same run — there is no "continue" button, because
-   in every engine that does this well the completion *is* the resume.
-   --------------------------------------------------------------- */
+/* ============================ the graph ============================ */
+function itemByStep(r,stepId){ return r.taskItems.find(t=>t.stepId===stepId); }
+function startItem(r){ return r.taskItems.find(t=>t.start); }
+
+/* One transition condition: a single structured equality against request data.
+   Strict ===, so boolean false matches false and not undefined. */
+function transitionMatches(tr,r){
+  if(!tr.when) return true;
+  return r.data[tr.when.path] === tr.when.equals;
+}
+function describeTransition(tr){
+  return tr.when ? `${tr.when.path} = ${JSON.stringify(tr.when.equals)}` : 'always';
+}
+
+/* Where the token goes after `t` completes. Returns the next item, 'END', or
+   null for a dead end (validation in the designer should make that impossible). */
+function routeFrom(r,t){
+  const tr = (t.transitions||[]).find(x=>transitionMatches(x,r));
+  if(tr){
+    const next = itemByStep(r,tr.to);
+    if(next) return {next, tr};
+  }
+  return t.end ? {next:'END'} : null;
+}
 
 /* One task item, dispatched.
 
@@ -74,11 +98,24 @@ async function runOneTask(r,t,actor){
   return true;
 }
 
-/* Everything a preceding task handed forward — the payload a signer is shown. */
-function priorOutputs(r,upTo){
-  return r.taskItems.slice(0,upTo)
-    .filter(t=>t.outputs)
-    .map(t=>({label:TASK_DEFS[t.def].label, outputs:t.outputs}));
+/* What the completion dialog shows the person: the request-data fields the
+   activity DECLARES it wants shown (runtimeConfig.display), with their current
+   values. Empty fields are omitted — so the draft step can list approvalNote
+   and it only appears on a redo, carrying the approver's reason. Nothing is
+   shown that the designer did not ask for. */
+function displayContext(r,t){
+  return (t.display||[])
+    .map(name=>{
+      const p = (S.definition.dataParameters||[]).find(x=>x.name===name);
+      const v = r.data[name];
+      if(v===''||v===null||v===undefined) return null;
+      return {label: p?p.label:name, value: p&&p.type==='boolean' ? (v?'Yes':'No') : String(v)};
+    })
+    .filter(Boolean);
+}
+
+function itemLabel(t){
+  return TASK_DEFS[t.def] ? TASK_DEFS[t.def].label : (t.label||'Placeholder');
 }
 
 function startRun(){
@@ -90,31 +127,71 @@ function startRun(){
     toast(`The server refused: ${gateRefusal(r,gate)}`); return;
   }
   if(runInFlight(r)){ toast('A run is already in progress'); return; }
-  r.run = {id:'run'+(++S.seq), state:'RUNNING', cursor:0, hash:gate.hash,
+
+  /* A FAILED run is resumable at the activity it failed on; anything else
+     starts a fresh walk from the start activity. */
+  if(r.run && r.run.state==='FAILED' && itemByStep(r,r.run.node)){
+    r.run.state='RUNNING'; r.run.finishedAt=null;
+    note(r,`resumed the run at ${itemLabel(itemByStep(r,r.run.node))}`);
+    driveRun(r);
+    return;
+  }
+  const first = startItem(r);
+  if(!first){ toast('This flow has no start activity'); return; }
+  r.taskItems.forEach(t=>{ if(t.status!=='NOT_RUN'){ t.status='NOT_RUN'; t.error=null; } });
+  r.run = {id:'run'+(++S.seq), state:'RUNNING', node:first.stepId, hash:gate.hash,
            startedBy:S.me, startedAt:stamp(), waitingOn:null, resumed:false, triggeredBy:null};
   note(r,'started an execution run');
   driveRun(r);
 }
 
+/* Advance the token from a completed activity. Mutates the run; returns
+   'CONTINUE' when the walk should carry on, anything else ended it. */
+function advance(r,t){
+  const run=r.run;
+  const routed = routeFrom(r,t);
+  if(!routed){
+    run.state='FAILED'; run.finishedAt=stamp();
+    note(r,`the run stopped — no transition matched after ${itemLabel(t)}`,'system');
+    render(); toast('Run stopped — no transition matched');
+    return 'ENDED';
+  }
+  if(routed.next==='END'){
+    run.state='COMPLETED'; run.finishedAt=stamp();
+    render(); toast('Process completed');
+    return 'ENDED';
+  }
+  if(routed.tr && routed.tr.when){
+    r.logs.push({taskId:t.id, attempt:t.attempts, at:stamp(), outcome:'ROUTED', ms:0,
+      by:run.resumed?'system':run.startedBy,
+      detail:`Routed to ${itemLabel(routed.next)} — ${describeTransition(routed.tr)}.`});
+  }
+  /* Entering an activity resets it: a loop back to the draft is a fresh attempt. */
+  routed.next.status='NOT_RUN'; routed.next.error=null;
+  run.node = routed.next.stepId;
+  return 'CONTINUE';
+}
+
 async function driveRun(r){
   const run=r.run; if(!run) return;
   run.state='RUNNING'; render();
-  while(run.cursor < r.taskItems.length){
-    const t = r.taskItems[run.cursor];
-    if(t.status==='SUCCEEDED'||t.status==='SKIPPED'){ run.cursor++; continue; }
-    const d = TASK_DEFS[t.def];
+  /* Cycle guard: a walk that routes without ever parking or executing a manual
+     step must terminate — bounded generously rather than trusted blindly. */
+  let hops = 0;
+  while(hops++ < 100){
+    const t = itemByStep(r,run.node);
+    if(!t){ run.state='FAILED'; run.finishedAt=stamp(); render(); return; }
 
-    /* Skip: decided once, when the cursor arrives. The run carries straight on —
-       nothing waits, and the step is recorded as skipped rather than done. */
-    const skip = (t.skipWhen||[]).filter(rule=>evaluateRule(rule,r).satisfied);
-    if(skip.length){
-      t.status='SKIPPED'; t.skipReason = skip.map(x=>evaluateRule(x,r).label).join('; ');
-      r.logs.push({taskId:t.id, attempt:t.attempts, at:stamp(), outcome:'SKIPPED', ms:0,
-        by: run.resumed?'system':run.startedBy,
-        detail:`Skipped — ${t.skipReason}.`});
-      note(r,`skipped ${d.label}`, run.resumed?'system':S.me);
-      run.cursor++; render(); continue;
+    /* A placeholder is a designed slot: its filled tasks sit as real activities
+       spliced before it in the graph, so by the time the token arrives here the
+       slot itself is a pass-through. */
+    if(t.kind==='PLACEHOLDER'){
+      t.status='SUCCEEDED';
+      if(advance(r,t)!=='CONTINUE') return;
+      continue;
     }
+
+    const d = TASK_DEFS[t.def];
 
     /* Precondition: unlike a gate rule, this cannot be checked before the run
        starts, because the value it needs may be produced by an earlier step.
@@ -137,7 +214,7 @@ async function driveRun(r){
         title:`${d.label} cannot start`, roles:['Administrator','NetOps'],
         dueAt:null, state:'OPEN', createdAt:stamp(),
         unmet, needs,
-        context:priorOutputs(r,run.cursor), result:null};
+        context:displayContext(r,t), result:null};
       r.workItems.push(w);
       t.status='WAITING';
       run.state='WAITING'; run.waitingOn=w.id;
@@ -157,7 +234,7 @@ async function driveRun(r){
       const w = {id:'wi'+(++S.seq), runId:run.id, taskItemId:t.id, kind:'TASK',
         title:d.label, roles:who,
         dueAt:t.dueBy||null, state:'OPEN', createdAt:stamp(),
-        context:priorOutputs(r,run.cursor), result:null};
+        context:displayContext(r,t), result:null};
       r.workItems.push(w);
       t.status='WAITING';
       run.state='WAITING'; run.waitingOn=w.id;
@@ -173,18 +250,18 @@ async function driveRun(r){
       ? {by:'system', onBehalfOf:r.requester, triggeredBy:run.triggeredBy}
       : {by:run.startedBy};
     const ok = await runOneTask(r,t,actor);
-    if(!ok && S.definition.onError==='STOP'){
+    if(!ok){
+      /* A failed task always halts the run. Execute again resumes right here. */
       run.state='FAILED'; run.finishedAt=stamp();
-      render(); toast('Run stopped after a failure — remaining tasks left untouched');
+      render(); toast('Run stopped after a failure — Execute again to retry this step');
       return;
     }
-    run.cursor++;
+    if(advance(r,t)!=='CONTINUE') return;
   }
-  run.state = r.taskItems.every(t=>t.status==='SUCCEEDED'||t.status==='SKIPPED')
-    ? 'COMPLETED' : 'FAILED';
-  run.finishedAt=stamp();
-  render();
-  toast(run.state==='COMPLETED'?'All tasks completed':'Run finished with failures');
+  /* The hop bound tripped: a routing loop with no human step in it. */
+  run.state='FAILED'; run.finishedAt=stamp();
+  note(r,'the run stopped — the transitions loop without ever pausing','system');
+  render(); toast('Run stopped — the transitions loop endlessly');
 }
 
 /* Resolving a blocker: the missing values are supplied through the work item, not
@@ -225,78 +302,75 @@ async function completeWorkItem(id,result){
   w.state='COMPLETED'; w.result=result; w.completedBy=S.me; w.completedAt=stamp();
   t.status='SUCCEEDED'; t.error=null; t.attempts++; t.outputs=result;
   /* A person's answers are stored on the request the same way an action's return
-     values are — that is how a drafted message reaches the task that sends it. */
+     values are — that is how a drafted message reaches the task that sends it,
+     and how an approval decision reaches the transitions that route on it. */
   const stored = applyOutputs(d, result, r);
   r.logs.push({taskId:t.id, attempt:t.attempts, at:stamp(), by:S.me, outcome:'SUCCEEDED', ms:0,
     detail:`${d.label} completed by ${USERS[S.me].name}.\n`
-         + Object.entries(result).filter(([,v])=>v).map(([k,v])=>`  ${k}: ${v}`).join('\n')
+         + Object.entries(result).filter(([,v])=>v!==''&&v!==undefined).map(([k,v])=>`  ${k}: ${v}`).join('\n')
          + (Object.keys(stored).length?`\nstored on the request:\n`
              +Object.entries(stored).map(([k,v])=>`  request.${k} = ${v}`).join('\n'):'')});
-  note(r,`completed "${w.title}" — execution continues`);
-  r.run.cursor++; r.run.waitingOn=null;
+  note(r,`completed "${w.title}"`);
+  r.run.waitingOn=null;
   r.run.resumed=true; r.run.triggeredBy=S.me;
-  closeModal(); render(); toast('Done — execution continues');
+  closeModal();
+  if(advance(r,t)!=='CONTINUE') return;
+  render(); toast('Done — execution continues');
   await driveRun(r);
 }
 
-/* What a refusal means is configured per task, because it differs per step.
-   Refusing is a decision, not a breakage — so the default routes the request
-   back to whoever can act on it rather than marking anything failed. */
-/* Set by the administrator on the flow step; the task type supplies a fallback
-   for steps that say nothing. The requester never sees it and cannot change it. */
-function refusalMode(t){
-  const def = TASK_DEFS[t.def] || {};
-  return t.onRefusal || def.onRefusalDefault || 'Send back';
-}
-
-function rejectWorkItem(id,reason){
-  const r=req();
-  const w=r.workItems.find(x=>x.id===id); if(!w||w.state!=='OPEN') return;
-  const t=r.taskItems.find(x=>x.id===w.taskItemId);
-  const d=TASK_DEFS[t.def];
-  const mode=refusalMode(t);
-  if(mode==='Not allowed'){ toast('This signature cannot be refused — cancel the run instead'); return; }
-
-  /* The refusal itself is recorded the same way whatever the mode. */
-  w.state='REJECTED'; w.rejectionReason=reason; w.completedBy=S.me; w.completedAt=stamp();
-  r.run.waitingOn=null;
-
-  if(mode==='Fail the task'){
-    t.status='FAILED'; t.error=`Signature refused: ${reason}`; t.attempts++;
-    r.logs.push({taskId:t.id, attempt:t.attempts, at:stamp(), by:S.me, outcome:'FAILED', ms:0,
-      detail:`${d.label} refused by ${USERS[S.me].name}.\n  reason: ${reason}`});
-    note(r,`declined "${w.title}" — the task failed`);
-    if(S.definition.onError==='STOP'){
-      r.run.state='FAILED'; r.run.finishedAt=stamp();
-      closeModal(); render(); toast('Signature refused — the run stopped here');
-    }else{
-      r.run.cursor++; r.run.resumed=true; r.run.triggeredBy=S.me;
-      closeModal(); render(); driveRun(r);
-    }
-    return;
+/* ============================ placeholder slots ============================ */
+/* Filling a slot splices a real activity into the request's own graph copy:
+   the new task takes over the slot's outgoing transitions and the slot points
+   at it, so the token walks prev → fills, in order → onward. Both filling and
+   unfilling move the plan's hash — approvers see every deviation. */
+function fillSlot(r, slotId, defName, cfg){
+  const slot = r.taskItems.find(t=>t.id===slotId);
+  if(!slot || slot.kind!=='PLACEHOLDER') return null;
+  /* Fills are chained by inserting the new task LAST: it inherits whatever the
+     current chain-end routes to, and the chain-end is redirected at it. */
+  const chain = slotFills(r, slot);
+  const prev = chain.length ? chain[chain.length-1] : null;
+  const inheritFrom = prev || slot;
+  const fill = {
+    id:'ti'+(++S.seq), def:defName, stepId:'f'+S.seq, kind:'TASK',
+    fromSlot:slot.id, start:false, end:false,
+    status:'NOT_RUN', attempts:0, config:cfg,
+    assignedRoles:[], dueBy:null, requires:[],
+    transitions: JSON.parse(JSON.stringify(inheritFrom.transitions||[])),
+  };
+  if(prev){
+    prev.transitions = [{when:null, to:fill.stepId}];
+  }else{
+    /* first fill: it goes where the slot went; the slot now goes to it */
+    slot.transitions = [{when:null, to:fill.stepId}];
   }
-
-  /* Send back: nothing failed. The task never ran, the run ends, and the refusal
-     becomes an open change request — which the existing rule turns into a red gate. */
-  t.status='NOT_RUN';
-  r.logs.push({taskId:t.id, attempt:t.attempts, at:stamp(), by:S.me, outcome:'SENT_BACK', ms:0,
-    detail:`${d.label} declined by ${USERS[S.me].name}; sent back to the requester.\n  reason: ${reason}`});
-  r.changeRequests.push({id:'cr'+(++S.seq), user:S.me, resolved:false, at:stamp(),
-    text:`Declined "${w.title}": ${reason}`});
-  r.run.state='SENT_BACK'; r.run.finishedAt=stamp();
-  note(r,`declined "${w.title}" and sent the request back`);
-  closeModal(); render();
-  toast('Sent back to the requester — nothing was marked failed');
+  /* insert after the current chain end, keeping the list readable */
+  const anchor = prev || slot;
+  r.taskItems.splice(r.taskItems.indexOf(anchor)+1, 0, fill);
+  return fill;
+}
+function slotFills(r, slot){
+  return r.taskItems.filter(t=>t.fromSlot===slot.id);
+}
+function unfillSlot(r, fillId){
+  const i = r.taskItems.findIndex(t=>t.id===fillId);
+  if(i<0) return;
+  const fill = r.taskItems[i];
+  const pointer = r.taskItems.find(t=>(t.transitions||[]).some(x=>x.to===fill.stepId));
+  if(pointer) pointer.transitions = JSON.parse(JSON.stringify(fill.transitions||[]));
+  r.taskItems.splice(i,1);
+  r.logs = r.logs.filter(l=>l.taskId!==fillId);
 }
 
 /* There is deliberately NO way to run one task by hand. Execution happens only
-   through a run, which walks the flow in order, honours skip rules and
+   through a run, which walks the graph along its transitions, honours
    preconditions, and validates each action's required inputs before dispatch.
-   Retrying a failed step is Execute all again: a new run skips what already
-   succeeded and picks up where it failed. */
+   Retrying after a failure is Execute again: the run resumes at the failed
+   activity. */
 
 /* Ending a parked run is the requester's or an administrator's call, never the
-   signer's — otherwise "sign or nothing" is defeated by cancelling instead. */
+   assigned person's — otherwise a mandatory step is defeated by cancelling. */
 function mayCancel(r){ return r.requester===S.me || hasRole(S.me,'Administrator'); }
 
 function cancelRun(){
@@ -308,4 +382,3 @@ function cancelRun(){
   note(r,'cancelled the execution run');
   render(); toast('Run cancelled — the request is editable again');
 }
-
