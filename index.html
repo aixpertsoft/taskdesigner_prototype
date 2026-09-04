@@ -3,7 +3,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
 
-<link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="shared/app.css">
 
 <div class="app">
   <header class="topbar">
@@ -382,16 +382,20 @@ document.addEventListener('keydown', e=>{
    since the sibling may be exactly what is missing. */
 function missingParts(){
   return [
-    ['core.js',                  typeof evaluateRule  === 'function'],
-    ['inbox-view.js',            typeof viewInbox     === 'function'],
-    ['request-view.js',          typeof viewRequest   === 'function'],
-    ['dialogs.js',               typeof dlgSign       === 'function'],
-    ['run-engine.js',            typeof driveRun      === 'function'],
-    ['task-definitions.json.js', typeof window.TASK_DEFINITIONS === 'object'],
-    ['request-types.json.js',    typeof window.REQUEST_TYPES   === 'object'],
-    ['task-editor.js',           typeof viewTaskDefs  === 'function'],
-    ['request-type-editor.js',   typeof viewDefinition === 'function'],
-    ['execution-rules-editor.js',typeof defRules      === 'function'],
+    ['shared/core.js',                   typeof evaluateRule  === 'function'],
+    ['runtime/inbox-view.js',            typeof viewInbox     === 'function'],
+    ['runtime/request-view.js',          typeof viewRequest   === 'function'],
+    ['runtime/dialogs.js',               typeof dlgSign       === 'function'],
+    ['runtime/run-engine.js',            typeof driveRun      === 'function'],
+    ['data/task-definitions.json.js',    typeof window.TASK_DEFINITIONS === 'object'],
+    ['data/request-types.json.js',       typeof window.REQUEST_TYPES   === 'object'],
+    ['designer/task-editor.js',          typeof viewTaskDefs  === 'function'],
+    ['designer/request-type-editor.js',  typeof viewDefinition === 'function'],
+    ['designer/flow-editor.js',          typeof defFlow       === 'function'],
+    ['designer/flow-step-card.js',       typeof flowStep      === 'function'],
+    ['designer/flow-graph.js',           typeof flowSvg       === 'function'],
+    ['designer/data-editor.js',          typeof defData       === 'function'],
+    ['designer/execution-rules-editor.js', typeof defRules    === 'function'],
   ].filter(([,ok])=>!ok).map(([f])=>f);
 }
 
@@ -405,7 +409,7 @@ function boot(){
           ${missing.length === 1 ? 'This file' : 'These files'} could not be loaded:</p>
         <div class="te-call mono">${missing.join('<br>')}</div>
         <p style="color:var(--ink-3);font-size:12.5px;margin:12px 0 0">
-          They must sit in the same folder as <span class="mono">index.html</span>. If they are
+          The paths are relative to <span class="mono">index.html</span>. If the files are
           there, it is almost certainly a cached page — reload with
           <b>Ctrl&nbsp;+&nbsp;Shift&nbsp;+&nbsp;R</b>.</p>
       </div>`;
@@ -435,14 +439,18 @@ function boot(){
      modules and fetch() of siblings are blocked over file://, and this prototype
      must survive being double-clicked. Order only matters for the data files,
      which the editors read at load. -->
-<script src="core.js"></script>
-<script src="inbox-view.js"></script>
-<script src="request-view.js"></script>
-<script src="dialogs.js"></script>
-<script src="run-engine.js"></script>
-<script src="task-definitions.json.js"></script>
-<script src="request-types.json.js"></script>
-<script src="task-editor.js"></script>
-<script src="request-type-editor.js"></script>
-<script src="execution-rules-editor.js"></script>
+<script src="shared/core.js"></script>
+<script src="runtime/inbox-view.js"></script>
+<script src="runtime/request-view.js"></script>
+<script src="runtime/dialogs.js"></script>
+<script src="runtime/run-engine.js"></script>
+<script src="data/task-definitions.json.js"></script>
+<script src="data/request-types.json.js"></script>
+<script src="designer/task-editor.js"></script>
+<script src="designer/request-type-editor.js"></script>
+<script src="designer/flow-editor.js"></script>
+<script src="designer/flow-step-card.js"></script>
+<script src="designer/flow-graph.js"></script>
+<script src="designer/data-editor.js"></script>
+<script src="designer/execution-rules-editor.js"></script>
 <script>boot();</script>

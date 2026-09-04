@@ -129,28 +129,37 @@ single most important assertion in the POC.
 ## Repository layout
 
 ```
-index.html                  the shell: markup, seed data, render(), event wiring, boot
-app.css                     base styles
-core.js                     icons, demo users, helpers, and the RULE ENGINE
-inbox-view.js               the runtime's landing screen
-request-view.js             the request screen: cards, panes, rail, gate bar
-dialogs.js                  every modal
-run-engine.js               execution and every mutation
-task-definitions.json.js    the task catalogue, as data
-request-types.json.js       the request types and their task flows, as data
-task-editor.js              the Task types screen and the binding resolver
-request-type-editor.js      the Request types screen and the task flow editor
-execution-rules-editor.js   the gate rules
-docs/overview.md            feature overview and design decisions
-docs/specification.md       full technical specification
-docs/prototype-guide.md     screen-by-screen walkthrough
+index.html                            the shell: markup, seed data, render(), event wiring, boot
+shared/
+  app.css                             base styles
+  core.js                             icons, demo users, helpers, and the RULE ENGINE
+runtime/                              the end user's application
+  inbox-view.js                       the landing screen
+  request-view.js                     the request screen: cards, panes, rail, gate bar
+  dialogs.js                          every runtime modal
+  run-engine.js                       execution and every mutation
+designer/                             the administrator's application
+  task-editor.js                      the Task types screen and the binding resolver
+  request-type-editor.js              the Request types screen shell, document, export/import
+  flow-editor.js                      the Task flow section: list, add step, validation, handlers
+  flow-step-card.js                   one activity's card: data wiring, runtime config, edges
+  flow-graph.js                       the read-only SVG overview of the graph
+  data-editor.js                      the Data parameters section and the reference guard
+  execution-rules-editor.js           the gate rules
+data/                                 documents, no logic
+  task-definitions.json.js            the task catalogue
+  request-types.json.js               the request types and their task flows
+docs/overview.md                      feature overview and design decisions
+docs/specification.md                 full technical specification
+docs/prototype-guide.md               screen-by-screen walkthrough
 ```
 
 ## Editing the prototype
 
-Hand-written HTML, CSS and vanilla JavaScript, one file per responsibility. The two `*.json.js`
-files hold **data and no logic**; `core.js` carries the rule engine (`evaluateRule`/`evaluateGate` —
-the part worth porting); `run-engine.js` carries execution and every mutation; each screen and the
+Hand-written HTML, CSS and vanilla JavaScript, one folder per key responsibility and one file per
+UI element. The two `data/*.json.js` files hold **data and no logic**; `shared/core.js` carries the
+rule engine (`evaluateRule`/`evaluateGate` — the part worth porting); `run-engine.js` carries
+execution and every mutation; each screen and the
 dialogs render from their own file; each editor owns its model and screen. `index.html` is only the
 shell: markup, `seed()`, `render()`, the delegated event handlers (dispatching on `data-act`; each
 editor registers its own under `data-te`/`data-rt`/`data-er`/`data-dp`), and `boot()`.

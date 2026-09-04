@@ -239,7 +239,7 @@ see to that — so the request is the bus.
 The right-hand rail previews the signature live: what it needs, what it produces, and — for a
 manual type — the form the person will get.
 
-The catalogue itself lives in [`task-definitions.json.js`](../task-definitions.json.js) — strip the
+The catalogue itself lives in [`data/task-definitions.json.js`](../data/task-definitions.json.js) — strip the
 assignment line and the remainder is a valid JSON document, the one `GET /taskdefinitions` would
 return. **Export JSON** on the list screen hands you exactly that.
 
@@ -373,7 +373,7 @@ Step rules reuse the same `TaskRule` shape as gate rules — there is no second 
 ### It is all JSON
 
 **Export JSON** on this screen hands you the whole request type — flow, data wiring, step rules,
-data parameters and gate rules — as [`request-types.json.js`](../request-types.json.js) holds it. Strip
+data parameters and gate rules — as [`data/request-types.json.js`](../data/request-types.json.js) holds it. Strip
 the assignment line and the remainder is a valid `.json` document, the one `GET /taskrequestdefs`
 would return. **Import JSON** takes one back, refusing an `apiVersion` it does not recognise rather
 than guessing at the shape.
@@ -408,14 +408,18 @@ their model, and `index.html` is only a consumer:
 
 | File | Owns |
 | --- | --- |
-| `core.js` | icons, demo users, helpers, and the **rule engine** — the part worth porting |
-| `run-engine.js` | execution and every mutation — the `drive()` loop as a statement of intent |
-| `inbox-view.js` / `request-view.js` / `dialogs.js` | the runtime screens and modals |
-| `task-definitions.json.js` | the task catalogue, as data |
-| `request-types.json.js` | the request types and their task flows, as data |
-| `task-editor.js` | the task-definition model, the binding resolver, the Task types screen |
-| `request-type-editor.js` | the Request types screen, including the task flow editor |
-| `execution-rules-editor.js` | the gate rules — the two rule types, and adding/removing them |
+| `shared/core.js` | icons, demo users, helpers, and the **rule engine** — the part worth porting |
+| `runtime/run-engine.js` | execution and every mutation — the `drive()` loop as a statement of intent |
+| `runtime/inbox-view.js` / `request-view.js` / `dialogs.js` | the runtime screens and modals |
+| `data/task-definitions.json.js` | the task catalogue, as data |
+| `data/request-types.json.js` | the request types, their task flows and all data wiring, as data |
+| `designer/task-editor.js` | the task-definition model, the binding resolver, the Task types screen |
+| `designer/request-type-editor.js` | the Request types screen shell, its document, export/import |
+| `designer/flow-editor.js` | the Task flow section — step list, add step, validation, handlers |
+| `designer/flow-step-card.js` | one activity's card — data wiring, runtime config, transitions |
+| `designer/flow-graph.js` | the read-only SVG overview of the graph |
+| `designer/data-editor.js` | the Data parameters section and its reference guard |
+| `designer/execution-rules-editor.js` | the gate rules — the two rule types, and adding/removing them |
 | `index.html` | the shell — markup, seed data, `render()`, event wiring, boot |
 
 The render functions are throwaway: the real implementation is React and MUI on the existing designer

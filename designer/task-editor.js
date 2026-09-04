@@ -339,7 +339,7 @@ function teList(){
     <div>
       <h1>Task types</h1>
       <p>The catalogue requests choose from. Loaded from
-        <span class="mono">task-definitions.json.js</span> — the document the server would return
+        <span class="mono">data/task-definitions.json.js</span> — the document the server would return
         from <span class="mono">GET /taskdefinitions</span>.</p>
     </div>
     <div style="display:flex;gap:8px">
