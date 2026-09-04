@@ -15,14 +15,10 @@
      Shared by every task type:
        name, label, icon, description, kind, params
          params = the task's configuration fields: design-time settings that
-                  control how it behaves, valued in a flow step's defaults or
-                  once when a task is added by hand.
-
-         Two flags decide how much of that the requester actually gets. Both are
-         still set per step in the request type's task flow — they only restrict
-         the request-level form:
-           readonly  shown, but not editable in the request
-           hidden    not shown in the request at all
+                  control how it behaves. Their values ALWAYS come from the
+                  request type — a flow step's defaults, or a placeholder's
+                  preconfigured activity. The requester never fills a task
+                  configuration form.
 
      kind: "SERVER"  ->  serverActionConfig
          action  = the annotated Groovy/Java the server already exposes
@@ -80,7 +76,7 @@ window.TASK_DEFINITIONS = {
       "kind": "SERVER",
       "params": [
         {"name": "signedBy", "label": "Signed on behalf of", "type": "text", "required": true,
-         "readonly": true, "placeholder": "AixBOMS Change Management"}
+         "placeholder": "AixBOMS Change Management"}
       ],
       "serverActionConfig": {
         "action": "digitallySign",
@@ -122,7 +118,7 @@ window.TASK_DEFINITIONS = {
       "kind": "SERVER",
       "params": [
         {"name": "fromAddress", "label": "Sender", "type": "text", "required": true,
-         "hidden": true, "placeholder": "change@aixpertsoft.de"}
+         "placeholder": "change@aixpertsoft.de"}
       ],
       "serverActionConfig": {
         "action": "sendMail",

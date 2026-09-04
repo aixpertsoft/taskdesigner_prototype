@@ -324,9 +324,17 @@ async function completeWorkItem(id,result){
    the new task takes over the slot's outgoing transitions and the slot points
    at it, so the token walks prev → fills, in order → onward. Both filling and
    unfilling move the plan's hash — approvers see every deviation. */
-function fillSlot(r, slotId, defName, cfg){
+function fillSlot(r, slotId, activityId){
   const slot = r.taskItems.find(t=>t.id===slotId);
   if(!slot || slot.kind!=='PLACEHOLDER') return null;
+  /* Only a PRECONFIGURED activity from the slot's own menu — never a raw task
+     type. The designer configured it like a flow step, so it arrives complete:
+     defaults, assignment, display, preconditions. */
+  const act = (slot.possibleActivities||[]).find(a=>a.id===activityId);
+  if(!act) return null;
+  const defName = act.taskDefinition;
+  const cfg = JSON.parse(JSON.stringify(act.defaults||{}));
+  const arc = act.runtimeConfig||{};
   /* Fills are chained by inserting the new task LAST: it inherits whatever the
      current chain-end routes to, and the chain-end is redirected at it. */
   const chain = slotFills(r, slot);
@@ -334,9 +342,12 @@ function fillSlot(r, slotId, defName, cfg){
   const inheritFrom = prev || slot;
   const fill = {
     id:'ti'+(++S.seq), def:defName, stepId:'f'+S.seq, kind:'TASK',
-    fromSlot:slot.id, start:false, end:false,
+    fromSlot:slot.id, fillLabel:act.label||defName, start:false, end:false,
     status:'NOT_RUN', attempts:0, config:cfg,
-    assignedRoles:[], dueBy:null, requires:[],
+    assignedRoles:JSON.parse(JSON.stringify(arc.assignedRoles||[])),
+    dueBy:arc.dueBy||null,
+    display:JSON.parse(JSON.stringify(arc.display||[])),
+    requires:JSON.parse(JSON.stringify(arc.requires||[])),
     transitions: JSON.parse(JSON.stringify(inheritFrom.transitions||[])),
   };
   if(prev){

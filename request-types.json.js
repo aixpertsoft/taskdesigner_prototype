@@ -23,8 +23,14 @@
        stepId          stable id; transitions refer to it
        taskDefinition  name from task-definitions.json (absent on a placeholder)
        kind            "PLACEHOLDER" marks a designed slot: at runtime it shows
-                       as an "Add task" button, and the requester may fill it
-                       with any of `possibleTasks`, in order. Empty = pass-through.
+                       as an "Add task" button, and the requester may fill it with
+                       any of its PRECONFIGURED ACTIVITIES — never a raw task
+                       type. Each entry carries a label, the task type it uses,
+                       its defaults and its own runtimeConfig, so a fill arrives
+                       fully configured with one click. Empty = pass-through.
+       possibleActivities[]  the slot's menu: {id, label, taskDefinition,
+                       defaults, runtimeConfig:{assignedRoles, dueBy, display,
+                       requires}}. Configured by the designer, like a flow step.
        start / end     exactly one activity is the start; one or more are ends.
                        A completed end with no matching transition completes
                        the run.
@@ -62,7 +68,9 @@
    FUTURE SAFETY
      - apiVersion is checked on load; unknown majors are refused, not guessed
        at. v2 introduced transitions/start/end and removed onRefusal, skipWhen
-       and onError — a v1 document is refused rather than half-read.
+       and onError; v3 replaced a placeholder's raw possibleTasks with
+       preconfigured possibleActivities. Older documents are refused rather
+       than half-read.
      - Everything is a named key; references are by name, never by index.
      - Every union carries an explicit discriminator: rules have `kind`,
        parameters have `owner` and `type`, placeholder activities have
@@ -70,7 +78,7 @@
      - Unknown fields are preserved across an import/export round-trip.
    =========================================================================== */
 window.REQUEST_TYPES = {
-  "apiVersion": "aixboms.requesttype/v2",
+  "apiVersion": "aixboms.requesttype/v3",
   "requestTypes": [
     {
       "id": "maintenance-notification",
@@ -149,7 +157,23 @@ window.REQUEST_TYPES = {
           "stepId": "p1",
           "kind": "PLACEHOLDER",
           "label": "Additional steps",
-          "possibleTasks": ["signNotification", "approveNotification"],
+          "possibleActivities": [
+            {
+              "id": "a1",
+              "label": "Digital signature",
+              "taskDefinition": "signNotification",
+              "defaults": {"signedBy": "AixBOMS Change Management"},
+              "runtimeConfig": {"assignedRoles": [], "dueBy": null, "display": [], "requires": []}
+            },
+            {
+              "id": "a2",
+              "label": "Second approval",
+              "taskDefinition": "approveNotification",
+              "defaults": {},
+              "runtimeConfig": {"assignedRoles": ["Administrator"], "dueBy": null,
+                "display": ["notificationSubject", "notificationBody", "recipients"], "requires": []}
+            }
+          ],
           "start": false,
           "end": false,
           "runtimeConfig": {

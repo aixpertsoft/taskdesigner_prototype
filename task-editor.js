@@ -403,9 +403,7 @@ function fieldRows(list, which){
         : `<input type="text" data-te-f="${which}" data-i="${i}" data-k="placeholder"
              value="${esc(p.placeholder||'')}" placeholder="placeholder" style="flex:1;min-width:120px">`}
       <span class="flags">
-        ${[['required','required','Must have a value'],
-            ['readonly','fixed','Shown in the request, but not editable there'],
-            ['hidden','hidden','Not shown in the request at all']].map(([k,txt,tip])=>
+        ${[['required','required','Must have a value']].map(([k,txt,tip])=>
           `<label class="flagchip ${p[k]?'on':''}" title="${tip}">
             <input type="checkbox" data-te-f="${which}" data-i="${i}" data-k="${k}" ${p[k]?'checked':''}>${txt}
           </label>`).join('')}
@@ -616,25 +614,20 @@ function previewHTML(d, issues){
   const stored = (d.outputs||[]).filter(m=>m.target && m.target.kind==='REQUEST_DATA' && m.target.path);
   return `
   <section class="panel">
-    <div class="panel-head"><h3>What the requester sees</h3></div>
+    <div class="panel-head"><h3>Set by the designer</h3></div>
     <div class="panel-body">
       ${(()=>{
         const all = d.params||[];
-        const shown = all.filter(p=>!p.hidden);
-        const hidden = all.filter(p=>p.hidden);
-        if(!all.length) return `<div style="font-size:12.5px;color:var(--ink-3)">No fields — nothing to fill in.</div>`;
-        return shown.map(p=>`
+        if(!all.length) return `<div style="font-size:12.5px;color:var(--ink-3)">No configuration — this task type needs no settings.</div>`;
+        return all.map(p=>`
           <div class="field">
-            <label>${esc(p.label||p.name||'—')} ${p.required?'<span class="req">*</span>':''}${
-              p.readonly?' <span class="pill neutral">fixed</span>':''}</label>
+            <label>${esc(p.label||p.name||'—')} ${p.required?'<span class="req">*</span>':''}</label>
             ${p.type==='enum'
               ? `<select disabled>${(p.values||[]).map(v=>`<option>${esc(v)}</option>`).join('')}</select>`
               : `<input type="text" disabled placeholder="${esc(p.placeholder||'')}">`}
           </div>`).join('')
-          + (shown.length?'':`<div style="font-size:12.5px;color:var(--ink-3)">Nothing — every field
-              is set by the request type.</div>`)
-          + (hidden.length?`<span class="hint">Not shown to the requester:
-              ${hidden.map(p=>esc(p.label||p.name)).join(', ')}.</span>`:'');
+          + `<span class="hint">Valued in the request type — a flow step's defaults, or a
+              preconfigured activity. The requester never fills these in.</span>`;
       })()}
     </div>
   </section>
@@ -776,7 +769,7 @@ document.addEventListener('change', e=>{
     /* The flag chips show their state through the .on class, which only a full
        render rebuilds — the checkbox inside them is invisible. So a flag toggle
        must render, not just repaint the preview, or the chip lags a click behind. */
-    if(k==='required'||k==='readonly'||k==='hidden'){ p[k] = el.checked; render(); return; }
+    if(k==='required'){ p[k] = el.checked; render(); return; }
     if(k==='values') p.values = el.value.split(',').map(s=>s.trim()).filter(Boolean);
     else p[k] = el.value;
     /* A renamed result field is a renamed output row — keep them in step. */

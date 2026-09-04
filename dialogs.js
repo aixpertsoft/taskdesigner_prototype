@@ -15,26 +15,34 @@ function openModal(html){
   const f = $('#modal input, #modal select, #modal button');
   if(f) f.focus();
 }
-/* Filling a placeholder slot — the ONLY way a requester extends a plan. The
-   slot is a designed extension point: the request type decided where in the
-   graph it sits and which task types are eligible. */
+/* Filling a placeholder slot — the ONLY way a requester extends a plan, and the
+   menu holds PRECONFIGURED activities, never raw task types. Each entry was set
+   up by the designer like a flow step, so one click adds it complete — there is
+   no configuration form for the requester at all. */
 function dlgAddTask(slotId){
   const r = req();
   const slot = r.taskItems.find(t=>t.id===slotId);
   if(!slot) return;
-  const eligible = (slot.possibleTasks||[]).map(n=>TASK_DEFS[n]).filter(Boolean);
-  openModal(`<div class="dialog" role="dialog" aria-modal="true" aria-label="Add task">
-    <div class="dhead"><h2>Add a task — ${esc(slot.label||'Additional steps')}</h2>
+  const acts = (slot.possibleActivities||[]).filter(a=>TASK_DEFS[a.taskDefinition]);
+  openModal(`<div class="dialog" role="dialog" aria-modal="true" aria-label="Add an activity">
+    <div class="dhead"><h2>Add — ${esc(slot.label||'Additional steps')}</h2>
       <button class="iconbtn" data-act="close">${I.cross}</button></div>
     <div class="dbody">
       <p style="margin:0;color:var(--ink-3);font-size:13px">
-        This slot was designed into the process; the request type decides which kinds of work may
-        go here. Adding one changes the plan, so approvals will need to be given again.</p>
+        These activities were configured into the process by its designer — adding one is a single
+        click, nothing to fill in. It changes the plan, so approvals will need to be given again.</p>
       <div class="tiles">
-        ${eligible.map(d=>`<button class="tile" data-act="pick-task"
-            data-def="${d.name}" data-slot="${slot.id}">
-          <span class="ti">${d.icon}</span><b>${esc(d.label)}</b><small>${esc(d.desc)}</small>
-        </button>`).join('')}
+        ${acts.map(a=>{
+          const d = TASK_DEFS[a.taskDefinition];
+          const cfg = Object.entries(a.defaults||{}).filter(([,v])=>v!=='')
+            .map(([k,v])=>`${k}: ${v}`).join(' · ');
+          return `<button class="tile" data-act="fill-slot"
+              data-activity="${esc(a.id)}" data-slot="${slot.id}">
+            <span class="ti">${d.icon}</span><b>${esc(a.label||d.label)}</b>
+            <small>${esc(d.desc)}</small>
+            ${cfg?`<small class="mono" style="opacity:.75">${esc(cfg)}</small>`:''}
+          </button>`;
+        }).join('')}
       </div>
     </div>
   </div>`);
@@ -80,54 +88,6 @@ function dlgBlocker(workItemId){
     <div class="dfoot">
       <button class="btn" data-act="close">Cancel</button>
       ${fields.length?`<button class="btn go" data-act="do-unblock" data-id="${w.id}">${I.check} Supply &amp; continue</button>`:''}
-    </div>
-  </div>`);
-}
-/* The one-time form shown when a task is ADDED. There is no editing afterwards:
-   template steps take their values from the request type's flow defaults, and an
-   ad-hoc task is initialised here, once. Changing your mind means remove and
-   re-add — which moves the hash and dismisses approvals, as an edit should. */
-function dlgConfigTask(defName, slotId){
-  const def = TASK_DEFS[defName];
-  const cfg = {};
-  openModal(`<div class="dialog" role="dialog" aria-modal="true" aria-label="Add task">
-    <div class="dhead">
-      <span style="color:var(--accent)">${def.icon}</span>
-      <h2>Add — ${esc(def.label)}</h2>
-      <button class="iconbtn" data-act="close">${I.cross}</button>
-    </div>
-    <div class="dbody">
-      ${(()=>{
-        /* hidden params are not rendered at all; readonly ones are shown but
-           locked. Both are still set per step in the request type. */
-        const shown = def.params.filter(p=>!p.hidden);
-        if(!shown.length) return `<div class="empty">Nothing to configure — every field of this
-          task is set by the request type.</div>`;
-        return shown.map(p=>{
-          const v = cfg[p.name]??'';
-          const lock = p.readonly
-            ? `<span class="hint">Set by the request type — not editable here.</span>` : '';
-          if(p.type==='enum') return `<div class="field">
-            <label>${esc(p.label)} ${p.required?'<span class="req">*</span>':''}${
-              p.readonly?' <span class="pill neutral">fixed</span>':''}</label>
-            <select data-p="${p.name}" ${p.readonly?'disabled':''}>${p.values.map(o=>
-              `<option ${o===v?'selected':''}>${esc(o)}</option>`).join('')}</select>${lock}</div>`;
-          return `<div class="field">
-            <label>${esc(p.label)} ${p.required?'<span class="req">*</span>':''}${
-              p.readonly?' <span class="pill neutral">fixed</span>':''}</label>
-            <input type="text" data-p="${p.name}" value="${esc(v)}" ${p.readonly?'readonly':''}
-              placeholder="${esc(p.placeholder||'')}">${lock}</div>`;
-        }).join('');
-      })()}
-      <div style="font-size:12px;color:var(--ink-3);border-top:1px solid var(--border);padding-top:11px">
-        This form is generated from what the server declares about the task, and it is the only time
-        these values are asked for — task settings are fixed once the task is in the plan.
-      </div>
-    </div>
-    <div class="dfoot">
-      <button class="btn" data-act="close">Cancel</button>
-      <button class="btn primary" data-act="save-task" data-def="${defName}"
-        data-slot="${slotId||''}">Add task</button>
     </div>
   </div>`);
 }

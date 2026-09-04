@@ -65,7 +65,7 @@ function paneTasks(r,gate){
    the designer put into the process. Its fills appear as ordinary task cards,
    marked "added", directly after it. */
 function slotCard(r,t,locked){
-  const eligible = (t.possibleTasks||[]).map(n=>TASK_DEFS[n]).filter(Boolean);
+  const eligible = (t.possibleActivities||[]).filter(a=>TASK_DEFS[a.taskDefinition]);
   return `<article class="task slot">
     <div class="task-top" style="align-items:center">
       <div class="task-ico">${I.plus}</div>
@@ -73,13 +73,13 @@ function slotCard(r,t,locked){
         <div class="task-name"><strong>${esc(t.label||'Additional steps')}</strong>
           <span class="pill neutral">optional</span></div>
         <div class="task-note">A slot in the process — ${eligible.length
-          ? `may hold: ${eligible.map(d=>esc(d.label)).join(', ')}`
-          : 'no task types configured'}. Empty, the run passes straight through.</div>
+          ? `may hold: ${eligible.map(a=>esc(a.label||TASK_DEFS[a.taskDefinition].label)).join(', ')}`
+          : 'no activities configured'}. Empty, the run passes straight through.</div>
       </div>
       <div class="task-acts">
         <button class="btn sm" data-act="add-task" data-slot="${t.id}"
           ${locked||!eligible.length?'disabled':''}
-          title="${locked?'The plan is frozen while a run is in progress':'Add a task into this slot'}">
+          title="${locked?'The plan is frozen while a run is in progress':'Add a preconfigured activity into this slot'}">
           ${I.plus} Add task</button>
       </div>
     </div>
@@ -113,7 +113,7 @@ function taskCard(r,t,locked){
           ${t.attempts>1?`<span class="pill neutral">attempt ${t.attempts}</span>`:''}
         </div>
         <div class="task-cfg">
-          ${def.params.filter(p=>!p.hidden && t.config[p.name]).map(p=>
+          ${def.params.filter(p=>t.config[p.name]).map(p=>
             `<span class="kv">${esc(p.label)} <b>${esc(t.config[p.name])}</b></span>`).join('')}
         </div>
         ${last && t.status==='SUCCEEDED' ? `<div class="task-note">ran ${esc(last.at)} by ${esc(USERS[last.by].name)}${

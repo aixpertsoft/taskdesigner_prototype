@@ -76,7 +76,7 @@ function instantiateFlow(definition, seqBase){
     id:'ti'+(++n), def:step.taskDefinition||null, stepId:step.stepId,
     kind:step.kind||'TASK',
     label:step.label||null,                          /* placeholders name themselves */
-    possibleTasks:copy(step.possibleTasks||[]),
+    possibleActivities:copy(step.possibleActivities||[]),
     start:!!step.start, end:!!step.end,
     status:'NOT_RUN', attempts:0,
     config:copy(step.defaults||{}),
@@ -204,9 +204,9 @@ function tipPanel(){
         transitions route on her answer — there is no decline button.</li>
       <li>Watch the <b>Data</b> tab fill in as it goes: subject, text, decision, delivery
         status.</li>
-      <li>The slot between approval and send is a designed <b>Add task</b> button — fill it with a
-        <b>Sign notification</b> and the send carries a fingerprint of the approved wording.
-        Approvals are dismissed when you fill it, because the plan changed.</li>
+      <li>The slot between approval and send is a designed <b>Add task</b> button — one click adds
+        the preconfigured <b>Digital signature</b> and the send carries a fingerprint of the
+        approved wording. Approvals are dismissed when you fill it, because the plan changed.</li>
       <li>Switch to <b>Designer</b> (top left): the activity graph these steps come from, with the
         approved-=-false edge looping back, is drawn above the step list.</li>
     </ol>
@@ -281,39 +281,18 @@ document.addEventListener('click', e=>{
     }
 
     case 'add-task':    dlgAddTask(btn.dataset.slot); break;
-    case 'pick-task':   dlgConfigTask(btn.dataset.def, btn.dataset.slot); break;
+    case 'fill-slot':{
+      const fill = fillSlot(r, btn.dataset.slot, btn.dataset.activity);
+      if(!fill){ toast('That slot is gone'); break; }
+      note(r,`added "${fill.fillLabel}" into a slot`);
+      r.version++;
+      closeModal(); render();
+      toast('Activity added — approvals now cover it'); break;
+    }
     case 'do-unblock':{
       const values = {};
       document.querySelectorAll('#modal [data-p]').forEach(el=>{ values[el.dataset.p]=el.value.trim(); });
       resolveBlocker(btn.dataset.id, values); break;
-    }
-    case 'save-task':{
-      const defName=btn.dataset.def;
-      const def=TASK_DEFS[defName];
-      const cfg = {};
-      document.querySelectorAll('#modal [data-p]').forEach(el=>{
-        if(el.disabled || el.readOnly) return;
-        cfg[el.dataset.p]=el.value.trim();
-      });
-      let missing=null, unfixable=null;
-      def.params.forEach(p=>{
-        if(!p.required || cfg[p.name]) return;
-        if(p.hidden || p.readonly) unfixable = unfixable || p.label;
-        else missing = missing || p.label;
-      });
-      if(missing){ toast(`${missing} is required`); break; }
-      if(unfixable){
-        toast(`${unfixable} has no value, and it is not editable here — give it a default on the request type`);
-        break;
-      }
-      {
-        const fill = fillSlot(r, btn.dataset.slot, defName, cfg);
-        if(!fill){ toast('That slot is gone'); break; }
-        note(r,`added a ${def.label} task into "${r.taskItems.find(x=>x.id===btn.dataset.slot).label||'the slot'}"`);
-        toast('Task added — approvals now cover it');
-      }
-      r.version++;
-      closeModal(); render(); break;
     }
     case 'del-task':{
       /* Only slot fills are removable, and removal re-splices the graph so the

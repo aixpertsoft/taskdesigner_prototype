@@ -26,7 +26,7 @@
 /* ============================ the document ============================ */
 /* request-types.json.js is the source. Everything the editor changes is changed
    in this object, so Export hands back exactly what the server would store. */
-const RT_API = 'aixboms.requesttype/v2';
+const RT_API = 'aixboms.requesttype/v3';
 let REQUEST_TYPE_DOC = window.REQUEST_TYPES || {apiVersion:RT_API, requestTypes:[]};
 
 /* Refuse an unknown major rather than guessing at it — a file from a newer
@@ -91,6 +91,7 @@ function rc(step){
   if(!c.display)        c.display = [];
   if(!c.requires)       c.requires = [];
   if(!c.transitions)    c.transitions = [];
+  if(step.kind==='PLACEHOLDER' && !step.possibleActivities) step.possibleActivities = [];
   return c;
 }
 function stepMeta(step){
@@ -128,7 +129,7 @@ function flowStep(step,i){
           (m.manual ? `carried out by ${(rc(step).assignedRoles.length?rc(step).assignedRoles:['Administrator']).join(' or ')}`
                      + (rc(step).dueBy?` · due ${rc(step).dueBy}`:'') + ' · ' : '')
           + (m.placeholder
-              ? `may hold: ${(step.possibleTasks||[]).map(n=>TASK_DEFS[n]?TASK_DEFS[n].label:n).join(', ')||'nothing yet'}`
+              ? `may hold: ${(step.possibleActivities||[]).map(a=>a.label||(TASK_DEFS[a.taskDefinition]||{}).label||a.taskDefinition).join(', ')||'nothing yet'}`
               : defaultsSummary(m.def||{params:[]},step)))}
           — then: ${(rc(step).transitions||[]).map(tr=>
             `${tr.when?describeTransition(tr)+' → ':'→ '}${stepLabelById(tr.to)}`).join('; ')
@@ -162,30 +163,63 @@ function flowStep(step,i){
       ${m.placeholder?`
       <h4>Slot</h4>
       <span class="hint">A designed extension point: at runtime the requester sees an
-        <b>Add task</b> button here and may fill the slot with any of the eligible task types.
-        Empty, the run passes straight through.</span>
+        <b>Add task</b> button and picks from the <b>preconfigured activities</b> below — never a
+        raw task type, and never a form. Configure each one here exactly as you would a flow step;
+        one click adds it complete. Empty, the run passes straight through.</span>
       <div class="field" style="max-width:280px"><label>Label</label>
         <input type="text" data-rt="plabel" data-i="${i}" value="${esc(step.label||'')}"
           placeholder="Additional steps"></div>
-      <h5>Eligible task types</h5>
-      <div class="rolepick">
-        ${Object.values(TASK_DEFS).map(d=>`
-          <label class="rolechip ${(step.possibleTasks||[]).includes(d.name)?'on':''}">
-            <input type="checkbox" data-rt="ptask" data-i="${i}" data-name="${esc(d.name)}"
-              ${(step.possibleTasks||[]).includes(d.name)?'checked':''}>
-            ${esc(d.label)}
-          </label>`).join('')}
-      </div>`
+      <h5>Preconfigured activities</h5>
+      ${(step.possibleActivities||[]).map((a,j)=>{
+        const ad = TASK_DEFS[a.taskDefinition];
+        return `<div class="actcard">
+          <div class="te-map" style="border:0;padding:2px 0">
+            <input type="text" data-rt="act-label" data-i="${i}" data-j="${j}"
+              value="${esc(a.label||'')}" placeholder="label" style="width:170px">
+            <span class="te-arrow">uses</span>
+            <select data-rt="act-def" data-i="${i}" data-j="${j}" style="flex:1;min-width:150px">
+              ${Object.values(TASK_DEFS).map(d=>`<option value="${d.name}"
+                ${a.taskDefinition===d.name?'selected':''}>${esc(d.label)}</option>`).join('')}
+            </select>
+            <button class="btn sm ico" data-rt="act-del" data-i="${i}" data-j="${j}"
+              title="Remove this activity">${I.trash}</button>
+          </div>
+          ${ad && ad.params.length?`<div class="formgrid" style="padding:4px 0 0;max-width:none">
+            ${ad.params.map(p=>{
+              const v=(a.defaults||{})[p.name]??'';
+              const warn=(p.required&&!v&&p.type!=='boolean')
+                ?`<span class="hint" style="color:var(--bad)">Required — the requester cannot supply
+                    it, so it must be set here.</span>`:'';
+              if(p.type==='enum') return `<div class="field"><label>${esc(p.label)}</label>
+                <select data-rt="act-cfg" data-i="${i}" data-j="${j}" data-k="${p.name}">
+                  <option value="">—</option>
+                  ${(p.values||[]).map(o=>`<option ${o===v?'selected':''}>${esc(o)}</option>`).join('')}
+                </select>${warn}</div>`;
+              return `<div class="field"><label>${esc(p.label)}</label>
+                <input type="text" data-rt="act-cfg" data-i="${i}" data-j="${j}" data-k="${p.name}"
+                  value="${esc(v)}" placeholder="${esc(p.placeholder||'')}">${warn}</div>`;
+            }).join('')}
+          </div>`:''}
+          ${ad && ad.manual?`<div class="rolepick" style="margin-top:6px">
+            ${knownRoles().map(role=>`
+              <label class="rolechip ${((a.runtimeConfig||{}).assignedRoles||[]).includes(role)?'on':''}">
+                <input type="checkbox" data-rt="act-role" data-i="${i}" data-j="${j}" data-role="${esc(role)}"
+                  ${((a.runtimeConfig||{}).assignedRoles||[]).includes(role)?'checked':''}>
+                ${esc(role)}
+              </label>`).join('')}
+          </div>`:''}
+        </div>`;
+      }).join('')}
+      <button class="btn sm" data-rt="act-add" data-i="${i}" style="margin-top:6px">
+        ${I.plus} Add an activity</button>`
       :`
       <h4>Default values</h4>
-      <span class="hint">Pre-filled into the task when a request is created. Fields marked
-        <b>fixed</b> or <b>hidden</b> on the task type can only be set here — the requester cannot
-        change them, so a required one needs a value.</span>
+      <span class="hint">Pre-filled into the task when a request is created. Task settings are
+        design-time: the requester never edits them, so required fields need their value here.</span>
       <div class="formgrid" style="padding:0;max-width:none">
         ${m.params.length? m.params.map(p=>{
           const v = (step.defaults||{})[p.name] ?? '';
-          const flag = p.hidden   ? ' <span class="pill warn">hidden</span>'
-                     : p.readonly ? ' <span class="pill neutral">fixed</span>' : '';
+          const flag = '';
           const warn = (p.required && !v && p.type!=='boolean')
             ? `<span class="hint" style="color:var(--bad)">Required, and the requester cannot set
                 it — give it a value here.</span>` : '';
@@ -293,7 +327,7 @@ function transitionRows(step,i,dataParams){
 }
 
 function defaultsSummary(d,step){
-  const vals = (d.params||[]).filter(p=>!p.hidden && (step.defaults||{})[p.name])
+  const vals = (d.params||[]).filter(p=>(step.defaults||{})[p.name])
     .map(p=>`${p.label}: ${step.defaults[p.name]}`);
   return vals.length ? vals.join(' · ') : 'no defaults set';
 }
@@ -340,8 +374,18 @@ function flowIssues(){
       out.push(`"${m.label}": the unconditional transition fires before later conditions — move it last.`);
     trs.forEach(t=>{ if(!flow.some(x=>x.stepId===t.to))
       out.push(`"${m.label}" routes to a missing activity (${t.to}).`); });
-    if(st.kind==='PLACEHOLDER' && !(st.possibleTasks||[]).length)
-      out.push(`Slot "${m.label}" has no eligible task types.`);
+    if(st.kind==='PLACEHOLDER'){
+      if(!(st.possibleActivities||[]).length)
+        out.push(`Slot "${m.label}" has no preconfigured activities.`);
+      (st.possibleActivities||[]).forEach(a=>{
+        const ad = TASK_DEFS[a.taskDefinition];
+        if(!ad){ out.push(`Activity "${a.label||a.id}" uses an unknown task type.`); return; }
+        ad.params.filter(p=>p.required && p.type!=='boolean').forEach(p=>{
+          if(!((a.defaults||{})[p.name]))
+            out.push(`Activity "${a.label||ad.label}": required field "${p.label}" has no value — the requester cannot supply it.`);
+        });
+      });
+    }
   });
   /* reachability from the start */
   if(starts.length===1){
@@ -667,13 +711,21 @@ document.addEventListener('click', e=>{
       const base = {stepId:id, start:!flow.some(x=>x.start), end:false,
         runtimeConfig:{assignedRoles:[], dueBy:null, requires:[], transitions:[]}};
       if(btn.dataset.def==='__placeholder'){
-        flow.push(Object.assign(base, {kind:'PLACEHOLDER', label:'Additional steps', possibleTasks:[]}));
+        flow.push(Object.assign(base, {kind:'PLACEHOLDER', label:'Additional steps', possibleActivities:[]}));
       }else{
         flow.push(Object.assign(base, {taskDefinition:btn.dataset.def, defaults:{}}));
       }
       S.flowOpen = id;
       closeModal(); render(); toast('Activity added — wire it in with transitions'); break;
     }
+    case 'act-add':{
+      const list = flow[i].possibleActivities = flow[i].possibleActivities||[];
+      const first = Object.values(TASK_DEFS)[0];
+      list.push({id:'a'+(++S.seq), label:'', taskDefinition:first?first.name:'',
+        defaults:{}, runtimeConfig:{assignedRoles:[], dueBy:null, display:[], requires:[]}});
+      render(); break;
+    }
+    case 'act-del': flow[i].possibleActivities.splice(+btn.dataset.j,1); render(); break;
     case 'add-tr':{
       const others = flow.filter(x=>x!==flow[i]);
       rc(flow[i]).transitions.push({when:null, to:(others[0]||flow[i]).stepId});
@@ -720,10 +772,22 @@ document.addEventListener('change', e=>{
   }
   if(rt==='end'){ flow[i].end = el.checked; render(); return; }
   if(rt==='plabel'){ flow[i].label = el.value; render(); return; }
-  if(rt==='ptask'){
-    const list = flow[i].possibleTasks = flow[i].possibleTasks||[];
-    if(el.checked){ if(!list.includes(el.dataset.name)) list.push(el.dataset.name); }
-    else flow[i].possibleTasks = list.filter(x=>x!==el.dataset.name);
+  if(rt==='act-label'){ flow[i].possibleActivities[+el.dataset.j].label = el.value; render(); return; }
+  if(rt==='act-def'){
+    const a = flow[i].possibleActivities[+el.dataset.j];
+    a.taskDefinition = el.value; a.defaults = {};   /* new type, fresh configuration */
+    render(); return;
+  }
+  if(rt==='act-cfg'){
+    const a = flow[i].possibleActivities[+el.dataset.j];
+    (a.defaults = a.defaults||{})[el.dataset.k] = el.value; render(); return;
+  }
+  if(rt==='act-role'){
+    const a = flow[i].possibleActivities[+el.dataset.j];
+    const rc2 = a.runtimeConfig = a.runtimeConfig||{assignedRoles:[],dueBy:null,display:[],requires:[]};
+    const list = rc2.assignedRoles = rc2.assignedRoles||[];
+    if(el.checked){ if(!list.includes(el.dataset.role)) list.push(el.dataset.role); }
+    else rc2.assignedRoles = list.filter(x=>x!==el.dataset.role);
     render(); return;
   }
   if(rt==='tr-kind'){
@@ -789,6 +853,8 @@ document.head.insertAdjacentHTML('beforeend', `<style>
   color:var(--accent)}
 .flowbody h5{margin:14px 0 5px;font-size:12.5px;font-weight:600;color:var(--ink)}
 .flowstep.slotstep{border-style:dashed}
+.actcard{border:1px solid var(--border);border-radius:var(--r);background:var(--surface);
+  padding:8px 10px;margin-top:7px}
 .flowstep.slotstep .task-ico{color:var(--accent)}
 .flowbody .hint{display:block;margin-bottom:8px}
 .flowbody .formgrid{grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px}
