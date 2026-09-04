@@ -372,7 +372,7 @@ function teList(){
             ${d.manual
               ? `<span>closed by a person</span>`
               : `<span class="mono">${esc(d.action||'—')}</span>`}
-            <span class="dot">·</span><span>${d.params.length} config field${d.params.length===1?'':'s'}</span>
+            <span class="dot">·</span><span>${d.params.length} configuration field${d.params.length===1?'':'s'}</span>
             ${d.outputs.length?`<span class="dot">·</span><span>stores ${d.outputs.filter(o=>o.target&&o.target.kind==='REQUEST_DATA').length} value(s)</span>`:''}
             <span class="dot">·</span><span>${n?`used by ${n} request${n===1?'':'s'}`:'not used yet'}</span>
           </div>
@@ -526,11 +526,13 @@ function teEditor(){
       </section>`:''}
 
       <section class="panel">
-        <div class="panel-head"><h3>Configuration UI</h3>
+        <div class="panel-head"><h3>Configuration fields</h3>
           <span class="pill neutral">${d.params.length} field${d.params.length===1?'':'s'}</span></div>
         <div class="panel-body">
-          <span class="hint">What the requester fills in when they add this task. A pre-built form
-            is the phase-2 idea; this is the attribute list.</span>
+          <span class="hint">Design-time settings that control how this task behaves — the sender
+            address, the template to use. Their values come from the request type's flow defaults,
+            or once when a task is added by hand; the input mappings below feed them to the action
+            as task fields.</span>
           ${fieldRows(d.params,'params')}
           <button class="btn sm" data-te="add-field" data-f="params">${I.plus} Add field</button>
         </div>
@@ -568,11 +570,12 @@ function teEditor(){
 
       ${d.kind==='MANUAL'?`
       <section class="panel">
-        <div class="panel-head"><h3>Result fields</h3>
+        <div class="panel-head"><h3>Form fields</h3>
           <span class="pill neutral">${(d.resultParams||[]).length}</span></div>
         <div class="panel-body">
-          <span class="hint">What the person supplies when they close it — a subject and a message,
-            or just a comment. The completion form is generated from these.</span>
+          <span class="hint">The form shown to the person carrying out the step — a subject and a
+            message, or just a comment. What they enter is the step's result, which the output
+            mappings below can store on the request.</span>
           ${fieldRows(d.resultParams||[],'resultParams')}
           <button class="btn sm" data-te="add-field" data-f="resultParams">${I.plus} Add field</button>
           <div class="field" style="margin-top:4px">
@@ -647,14 +650,14 @@ function previewHTML(d, issues){
 
   ${d.kind==='MANUAL'?`
   <section class="panel">
-    <div class="panel-head"><h3>What the signer supplies</h3></div>
+    <div class="panel-head"><h3>The form the person gets</h3></div>
     <div class="panel-body">
       ${(d.resultParams||[]).length ? (d.resultParams||[]).map(p=>`
         <div class="field">
           <label>${esc(p.label||p.name||'—')} ${p.required?'<span class="req">*</span>':''}</label>
           <input type="text" disabled placeholder="${esc(p.placeholder||'')}">
         </div>`).join('')
-        : `<div style="font-size:12.5px;color:var(--ink-3)">No result fields yet.</div>`}
+        : `<div style="font-size:12.5px;color:var(--ink-3)">No form fields yet.</div>`}
       <span class="hint">If refused by default: <b>${esc(d.onRefusalDefault||'Send back')}</b>.</span>
     </div>
   </section>`:''}

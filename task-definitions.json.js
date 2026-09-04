@@ -14,8 +14,9 @@
    SHAPE
      Shared by every task type:
        name, label, icon, description, kind, params
-         params = the configuration UI: what the REQUESTER fills in when they
-                  add this task to a request.
+         params = the task's configuration fields: design-time settings that
+                  control how it behaves, valued in a flow step's defaults or
+                  once when a task is added by hand.
 
          Two flags decide how much of that the requester actually gets. Both are
          still set per step in the request type's task flow — they only restrict
