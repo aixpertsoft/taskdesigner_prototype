@@ -11,38 +11,42 @@
    Behind a real server this whole file becomes one line — a fetch of
    /taskdefinitions — and nothing else in the prototype changes.
 
-   SHAPE
+   SHAPE — v2: a task type is a PURE FUNCTION with a signature and no
+   reference to any request. WHERE its inputs come from and WHERE its outputs
+   are stored is decided per use, in the request type's flow — the request
+   type is the call site; this catalogue only declares what can be called.
+   (v1 carried input/output mappings and configuration params on the task
+   itself, which welded every task type to one request type's field names.
+   A v1 document is refused rather than half-read.)
+
      Shared by every task type:
-       name, label, icon, description, kind, params
-         params = the task's configuration fields: design-time settings that
-                  control how it behaves. Their values ALWAYS come from the
-                  request type — a flow step's defaults, or a placeholder's
-                  preconfigured activity. The requester never fills a task
-                  configuration form.
+       name, label, icon, description, kind
 
-     kind: "SERVER"  ->  serverActionConfig
-         action  = the annotated Groovy/Java the server already exposes
-         inputs  = where each of that action's parameters comes from
-         outputs = where each of its return values is stored on the request
+     kind: "SERVER"
+       inputs[]   what the function needs:  {name, label, type, required,
+                  placeholder}. Mirrors the server action's parameter list;
+                  the labels are what the request designer wires against.
+       outputs[]  what it produces: {name, label, type}
+       serverActionConfig.action
+                  the annotated Groovy/Java the server already exposes — the
+                  implementation this signature fronts
 
-     kind: "MANUAL"  ->  manualTaskConfig
-         resultParams = what the PERSON supplies to close it. Types: text, enum,
-                        boolean — a boolean answer is what the flow's transitions
-                        typically route on (approved = true / false).
-         outputs      = where those answers are stored on the request
-
-   The three input source kinds are the only three there are — LITERAL,
-   REQUEST_DATA, TASK_PARAM. Resolution is a dictionary lookup; nothing is
-   parsed or evaluated. The dollar-brace form you see in the editor is
-   generated from these records for people to read, and never read back.
+     kind: "MANUAL"
+       manualTaskConfig
+         completeLabel  the verb on the button that closes it
+         resultParams[] the FORM the person fills in: {name, label, type,
+                        required, placeholder}. Their answers ARE the task's
+                        outputs — the request type decides where each one is
+                        stored. Types: text, enum, boolean; a boolean answer
+                        is what the flow's transitions typically route on.
 
    THESE FOUR ARE ONE WORKFLOW: a planned-maintenance notification.
-   Draft it, fingerprint it, have an administrator approve the exact wording,
-   then send it and record what the mail server said. Each step hands the next
-   one its work through the request's data.
+   Draft it, approve the exact wording, optionally fingerprint it, then send
+   it and record what the mail server said. How they hand work to each other
+   is wired in request-types.json.js — nothing here knows about it.
    =========================================================================== */
 window.TASK_DEFINITIONS = {
-  "apiVersion": "aixboms.taskdefinition/v1",
+  "apiVersion": "aixboms.taskdefinition/v2",
   "definitions": [
     {
       "name": "draftNotification",
@@ -50,7 +54,6 @@ window.TASK_DEFINITIONS = {
       "icon": "doc",
       "description": "A person writes the customer notification: subject, body and who receives it.",
       "kind": "MANUAL",
-      "params": [],
       "manualTaskConfig": {
         "completeLabel": "Submit draft",
         "resultParams": [
@@ -60,11 +63,6 @@ window.TASK_DEFINITIONS = {
            "placeholder": "We will replace the uplink switch in rack R12…"},
           {"name": "recipients", "label": "Recipients", "type": "text", "required": true,
            "placeholder": "ops@kunde-a.de, noc@kunde-b.de"}
-        ],
-        "outputs": [
-          {"source": "subject",    "target": {"kind": "REQUEST_DATA", "path": "notificationSubject"}},
-          {"source": "body",       "target": {"kind": "REQUEST_DATA", "path": "notificationBody"}},
-          {"source": "recipients", "target": {"kind": "REQUEST_DATA", "path": "recipients"}}
         ]
       }
     },
@@ -72,41 +70,33 @@ window.TASK_DEFINITIONS = {
       "name": "signNotification",
       "label": "Sign notification",
       "icon": "stamp",
-      "description": "Fingerprints the exact wording, so what was approved and what was sent can be proven identical.",
+      "description": "Fingerprints a text, so what was approved and what was sent can be proven identical.",
       "kind": "SERVER",
-      "params": [
-        {"name": "signedBy", "label": "Signed on behalf of", "type": "text", "required": true,
+      "inputs": [
+        {"name": "text", "label": "Text to sign", "type": "text", "required": true},
+        {"name": "signer", "label": "Signed on behalf of", "type": "text", "required": false,
          "placeholder": "AixBOMS Change Management"}
       ],
+      "outputs": [
+        {"name": "sha256", "label": "Fingerprint (SHA-256)", "type": "text"},
+        {"name": "signedAt", "label": "Signed at", "type": "text"}
+      ],
       "serverActionConfig": {
-        "action": "digitallySign",
-        "inputs": [
-          {"target": "text",   "source": {"kind": "REQUEST_DATA", "path": "notificationBody"}},
-          {"target": "signer", "source": {"kind": "TASK_PARAM",   "path": "signedBy"}}
-        ],
-        "outputs": [
-          {"source": "sha256",   "target": {"kind": "REQUEST_DATA", "path": "sha256"}},
-          {"source": "signedAt", "target": {"kind": "REQUEST_DATA", "path": "signedAt"}}
-        ]
+        "action": "digitallySign"
       }
     },
     {
       "name": "approveNotification",
       "label": "Approve notification",
       "icon": "pen",
-      "description": "An administrator approves the signed wording before it reaches customers.",
+      "description": "An administrator approves the wording before it reaches customers.",
       "kind": "MANUAL",
-      "params": [],
       "manualTaskConfig": {
         "completeLabel": "Submit decision",
         "resultParams": [
           {"name": "approved", "label": "Approve the wording", "type": "boolean", "required": true},
           {"name": "note", "label": "Comment", "type": "text",
            "placeholder": "Optional — and the reason, if you do not approve"}
-        ],
-        "outputs": [
-          {"source": "approved", "target": {"kind": "REQUEST_DATA", "path": "approved"}},
-          {"source": "note",     "target": {"kind": "REQUEST_DATA", "path": "approvalNote"}}
         ]
       }
     },
@@ -114,25 +104,22 @@ window.TASK_DEFINITIONS = {
       "name": "sendNotification",
       "label": "Send notification",
       "icon": "mail",
-      "description": "Sends the approved notification to the recipients and records what the mail server answered.",
+      "description": "Sends a mail to the recipients and records what the mail server answered.",
       "kind": "SERVER",
-      "params": [
-        {"name": "fromAddress", "label": "Sender", "type": "text", "required": true,
-         "placeholder": "change@aixpertsoft.de"}
+      "inputs": [
+        {"name": "from", "label": "Sender", "type": "text", "required": true,
+         "placeholder": "change@aixpertsoft.de"},
+        {"name": "to", "label": "To", "type": "text", "required": true},
+        {"name": "subject", "label": "Subject", "type": "text", "required": true},
+        {"name": "body", "label": "Message", "type": "text", "required": true},
+        {"name": "signature", "label": "Signature", "type": "text", "required": false}
+      ],
+      "outputs": [
+        {"name": "status", "label": "Delivery status", "type": "text"},
+        {"name": "messageId", "label": "Message id", "type": "text"}
       ],
       "serverActionConfig": {
-        "action": "sendMail",
-        "inputs": [
-          {"target": "from",      "source": {"kind": "TASK_PARAM",   "path": "fromAddress"}},
-          {"target": "to",        "source": {"kind": "REQUEST_DATA", "path": "recipients"}},
-          {"target": "subject",   "source": {"kind": "REQUEST_DATA", "path": "notificationSubject"}},
-          {"target": "body",      "source": {"kind": "REQUEST_DATA", "path": "notificationBody"}},
-          {"target": "signature", "source": {"kind": "REQUEST_DATA", "path": "sha256"}}
-        ],
-        "outputs": [
-          {"source": "status",    "target": {"kind": "REQUEST_DATA", "path": "sendStatus"}},
-          {"source": "messageId", "target": {"kind": "REQUEST_DATA", "path": "messageId"}}
-        ]
+        "action": "sendMail"
       }
     }
   ]

@@ -63,7 +63,7 @@ function routeFrom(r,t){
 
    Nothing here knows what the task *is* — it resolves the definition's input
    bindings, calls the named server action, and stores whatever the action
-   returned according to the output mappings. All four helpers live in
+   returned according to the item's output bindings. All the helpers live in
    task-editor.js, which owns the definition model. Returns true on success. */
 async function runOneTask(r,t,actor){
   const d = TASK_DEFS[t.def];
@@ -85,11 +85,11 @@ async function runOneTask(r,t,actor){
   }
 
   const produced = runServerAction(d, inputs, r);
-  const stored   = applyOutputs(d, produced, r);
+  const stored   = applyOutputs(d, t, produced, r);
   t.status='SUCCEEDED'; t.error=null;
   t.outputs = Object.keys(produced).length ? produced : null;
   r.logs.push({taskId:t.id, attempt:t.attempts, at:stamp(), outcome:'SUCCEEDED', ms:410, ...actor,
-    detail:`${call}\n${d.label} completed — ${taskSummary(d,t.config)}`
+    detail:`${call}\n${d.label} completed — ${taskSummary(d,t)}`
          + (t.outputs?`\nreturned:\n`+Object.entries(t.outputs).map(([k,v])=>`  ${k}: ${v}`).join('\n'):'')
          + (Object.keys(stored).length?`\nstored on the request:\n`
              +Object.entries(stored).map(([k,v])=>`  request.${k} = ${v}`).join('\n'):'')});
@@ -304,7 +304,7 @@ async function completeWorkItem(id,result){
   /* A person's answers are stored on the request the same way an action's return
      values are — that is how a drafted message reaches the task that sends it,
      and how an approval decision reaches the transitions that route on it. */
-  const stored = applyOutputs(d, result, r);
+  const stored = applyOutputs(d, t, result, r);
   r.logs.push({taskId:t.id, attempt:t.attempts, at:stamp(), by:S.me, outcome:'SUCCEEDED', ms:0,
     detail:`${d.label} completed by ${USERS[S.me].name}.\n`
          + Object.entries(result).filter(([,v])=>v!==''&&v!==undefined).map(([k,v])=>`  ${k}: ${v}`).join('\n')
@@ -329,11 +329,10 @@ function fillSlot(r, slotId, activityId){
   if(!slot || slot.kind!=='PLACEHOLDER') return null;
   /* Only a PRECONFIGURED activity from the slot's own menu — never a raw task
      type. The designer configured it like a flow step, so it arrives complete:
-     defaults, assignment, display, preconditions. */
+     wiring, assignment, display, preconditions. */
   const act = (slot.possibleActivities||[]).find(a=>a.id===activityId);
   if(!act) return null;
   const defName = act.taskDefinition;
-  const cfg = JSON.parse(JSON.stringify(act.defaults||{}));
   const arc = act.runtimeConfig||{};
   /* Fills are chained by inserting the new task LAST: it inherits whatever the
      current chain-end routes to, and the chain-end is redirected at it. */
@@ -343,7 +342,9 @@ function fillSlot(r, slotId, activityId){
   const fill = {
     id:'ti'+(++S.seq), def:defName, stepId:'f'+S.seq, kind:'TASK',
     fromSlot:slot.id, fillLabel:act.label||defName, start:false, end:false,
-    status:'NOT_RUN', attempts:0, config:cfg,
+    status:'NOT_RUN', attempts:0,
+    inputBindings:JSON.parse(JSON.stringify(act.inputBindings||{})),
+    outputBindings:JSON.parse(JSON.stringify(act.outputBindings||{})),
     assignedRoles:JSON.parse(JSON.stringify(arc.assignedRoles||[])),
     dueBy:arc.dueBy||null,
     display:JSON.parse(JSON.stringify(arc.display||[])),

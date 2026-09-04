@@ -113,8 +113,11 @@ function taskCard(r,t,locked){
           ${t.attempts>1?`<span class="pill neutral">attempt ${t.attempts}</span>`:''}
         </div>
         <div class="task-cfg">
-          ${def.params.filter(p=>t.config[p.name]).map(p=>
-            `<span class="kv">${esc(p.label)} <b>${esc(t.config[p.name])}</b></span>`).join('')}
+          ${taskInputs(def).map(p=>{
+            const b=(t.inputBindings||{})[p.name];
+            return b&&b.kind==='LITERAL'&&b.value
+              ? `<span class="kv">${esc(p.label)} <b>${esc(b.value)}</b></span>` : '';
+          }).join('')}
         </div>
         ${last && t.status==='SUCCEEDED' ? `<div class="task-note">ran ${esc(last.at)} by ${esc(USERS[last.by].name)}${
           last.onBehalfOf?` on behalf of ${esc(USERS[last.onBehalfOf].name)}`:''}</div>`:''}
@@ -168,7 +171,7 @@ function paneData(r){
     <div class="formgrid">
     ${S.definition.dataParameters.map(p=>{
       const v = r.data[p.name];
-      /* EXECUTION fields are written by a task's output mapping and sit outside the
+      /* EXECUTION fields are written by a task through the output wiring and sit outside the
          hash. AUTHOR fields are inside it, so they freeze while a run holds it. */
       const written = p.owner==='EXECUTION';
       const disabled = written || frozen;

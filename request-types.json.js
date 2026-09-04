@@ -15,8 +15,8 @@
      dataParameters[].owner
        AUTHOR     the requester's field. Inside the approval hash, so changing
                   one dismisses sign-off, and frozen while a run is in progress.
-       EXECUTION  written by a task's output mapping. Outside the hash — which
-                  is why a run does not dismiss its own approvals.
+       EXECUTION  written by a task through an output binding. Outside the hash
+                  — which is why a run does not dismiss its own approvals.
 
      taskFlow[] — one entry per ACTIVITY. List order is layout order only; the
      execution order is defined by the transitions.
@@ -25,16 +25,31 @@
        kind            "PLACEHOLDER" marks a designed slot: at runtime it shows
                        as an "Add task" button, and the requester may fill it with
                        any of its PRECONFIGURED ACTIVITIES — never a raw task
-                       type. Each entry carries a label, the task type it uses,
-                       its defaults and its own runtimeConfig, so a fill arrives
-                       fully configured with one click. Empty = pass-through.
+                       type. Each entry is wired exactly like a flow step, so a
+                       fill arrives fully configured with one click.
+                       Empty = pass-through.
        possibleActivities[]  the slot's menu: {id, label, taskDefinition,
-                       defaults, runtimeConfig:{assignedRoles, dueBy, display,
-                       requires}}. Configured by the designer, like a flow step.
+                       inputBindings, outputBindings, runtimeConfig:{
+                       assignedRoles, dueBy, display, requires}}.
        start / end     exactly one activity is the start; one or more are ends.
                        A completed end with no matching transition completes
                        the run.
-       defaults        pre-filled into the task item at creation
+
+       inputBindings — THE WIRING (v4). A task type is a pure function: it
+       declares inputs and outputs but has no idea where they live. This is
+       the call site — one entry per declared input of the task type:
+         {"kind": "LITERAL",      "value": "…"}   a fixed value, set here
+         {"kind": "REQUEST_DATA", "path": "…"}    read from a request field
+       Those are the only two kinds. Resolution is a dictionary lookup;
+       nothing is parsed or evaluated. An earlier activity hands work to a
+       later one only THROUGH the request's data — never by direct reference,
+       because slots and loops mean the author cannot know which task items a
+       plan will hold. The request is the bus.
+
+       outputBindings — one entry per declared output the process wants kept:
+         {"kind": "REQUEST_DATA", "path": "…"}    stored on a request field
+       Outputs without an entry are simply not stored. Targets should be
+       EXECUTION-owned fields — that keeps a run from moving its own hash.
 
        runtimeConfig — how the ENGINE behaves at this activity. None of it is
        shown to the requester or editable by them; all of it is inside the
@@ -67,18 +82,19 @@
 
    FUTURE SAFETY
      - apiVersion is checked on load; unknown majors are refused, not guessed
-       at. v2 introduced transitions/start/end and removed onRefusal, skipWhen
-       and onError; v3 replaced a placeholder's raw possibleTasks with
-       preconfigured possibleActivities. Older documents are refused rather
-       than half-read.
+       at. v2 introduced transitions/start/end; v3 replaced a placeholder's raw
+       possibleTasks with preconfigured possibleActivities; v4 moved ALL data
+       wiring here from the task definitions — `defaults` became inputBindings,
+       and output storage became outputBindings. Older documents are refused
+       rather than half-read.
      - Everything is a named key; references are by name, never by index.
      - Every union carries an explicit discriminator: rules have `kind`,
-       parameters have `owner` and `type`, placeholder activities have
-       `kind: "PLACEHOLDER"`. Nothing is inferred from shape.
+       parameters have `owner` and `type`, bindings have `kind`, placeholder
+       activities have `kind: "PLACEHOLDER"`. Nothing is inferred from shape.
      - Unknown fields are preserved across an import/export round-trip.
    =========================================================================== */
 window.REQUEST_TYPES = {
-  "apiVersion": "aixboms.requesttype/v3",
+  "apiVersion": "aixboms.requesttype/v4",
   "requestTypes": [
     {
       "id": "maintenance-notification",
@@ -124,7 +140,12 @@ window.REQUEST_TYPES = {
           "taskDefinition": "draftNotification",
           "start": true,
           "end": false,
-          "defaults": {},
+          "inputBindings": {},
+          "outputBindings": {
+            "subject":    {"kind": "REQUEST_DATA", "path": "notificationSubject"},
+            "body":       {"kind": "REQUEST_DATA", "path": "notificationBody"},
+            "recipients": {"kind": "REQUEST_DATA", "path": "recipients"}
+          },
           "runtimeConfig": {
             "assignedRoles": ["NetOps"],
             "dueBy": "11.09.2026",
@@ -141,7 +162,11 @@ window.REQUEST_TYPES = {
           "taskDefinition": "approveNotification",
           "start": false,
           "end": false,
-          "defaults": {},
+          "inputBindings": {},
+          "outputBindings": {
+            "approved": {"kind": "REQUEST_DATA", "path": "approved"},
+            "note":     {"kind": "REQUEST_DATA", "path": "approvalNote"}
+          },
           "runtimeConfig": {
             "assignedRoles": ["Administrator"],
             "dueBy": "12.09.2026",
@@ -162,14 +187,25 @@ window.REQUEST_TYPES = {
               "id": "a1",
               "label": "Digital signature",
               "taskDefinition": "signNotification",
-              "defaults": {"signedBy": "AixBOMS Change Management"},
+              "inputBindings": {
+                "text":   {"kind": "REQUEST_DATA", "path": "notificationBody"},
+                "signer": {"kind": "LITERAL", "value": "AixBOMS Change Management"}
+              },
+              "outputBindings": {
+                "sha256":   {"kind": "REQUEST_DATA", "path": "sha256"},
+                "signedAt": {"kind": "REQUEST_DATA", "path": "signedAt"}
+              },
               "runtimeConfig": {"assignedRoles": [], "dueBy": null, "display": [], "requires": []}
             },
             {
               "id": "a2",
               "label": "Second approval",
               "taskDefinition": "approveNotification",
-              "defaults": {},
+              "inputBindings": {},
+              "outputBindings": {
+                "approved": {"kind": "REQUEST_DATA", "path": "approved"},
+                "note":     {"kind": "REQUEST_DATA", "path": "approvalNote"}
+              },
               "runtimeConfig": {"assignedRoles": ["Administrator"], "dueBy": null,
                 "display": ["notificationSubject", "notificationBody", "recipients"], "requires": []}
             }
@@ -191,7 +227,17 @@ window.REQUEST_TYPES = {
           "taskDefinition": "sendNotification",
           "start": false,
           "end": true,
-          "defaults": {"fromAddress": "change@aixpertsoft.de"},
+          "inputBindings": {
+            "from":      {"kind": "LITERAL", "value": "change@aixpertsoft.de"},
+            "to":        {"kind": "REQUEST_DATA", "path": "recipients"},
+            "subject":   {"kind": "REQUEST_DATA", "path": "notificationSubject"},
+            "body":      {"kind": "REQUEST_DATA", "path": "notificationBody"},
+            "signature": {"kind": "REQUEST_DATA", "path": "sha256"}
+          },
+          "outputBindings": {
+            "status":    {"kind": "REQUEST_DATA", "path": "sendStatus"},
+            "messageId": {"kind": "REQUEST_DATA", "path": "messageId"}
+          },
           "runtimeConfig": {
             "assignedRoles": [],
             "dueBy": null,

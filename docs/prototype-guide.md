@@ -19,7 +19,7 @@ knowledge to follow it: **the notification you have to send customers before pla
 | --- | --- | --- | --- |
 | 1 | Draft notification | **person** | NetOps writes the subject, the message and the recipient list |
 | 2 | Approve notification | **person** | An administrator answers *Approve the wording?* — yes routes forward, no routes back to the draft |
-| 3 | Additional steps | **slot** | A designed extension point — may hold a *Sign notification* (a SHA-256 fingerprint of the wording) or a second approval |
+| 3 | Additional steps | **slot** | A designed extension point — its menu offers a preconfigured *Digital signature* (a SHA-256 fingerprint of the wording) and a *Second approval* |
 | 4 | Send notification | server | `sendMail` — delivers it and records what the mail server answered |
 
 The approval is given on the text itself — the dialog shows the drafted wording before the decision.
@@ -69,8 +69,9 @@ cause-and-effect between them stays demonstrable.
 5. The mail sends by itself. Open the **Data** tab: subject, text, recipients, delivery status and
    message id have all filled in during the run.
 6. Run it again, but first press **Add task** on the *Additional steps* slot and pick
-   **Sign notification** — approvals are dismissed because the plan changed, so re-approve. This
-   time the approved wording is fingerprinted and the send carries the signature.
+   **Digital signature** — one click, no form: the activity arrives preconfigured by the request
+   type. Approvals are dismissed because the plan changed, so re-approve. This time the approved
+   wording is fingerprinted and the send carries the signature.
 
 Nobody pressed a "continue" button at any point. Closing the human step *is* the resume.
 
@@ -101,11 +102,12 @@ Steps from the standard flow carry no badge — they are the normal case; a task
 hand is marked **added**, because a deviation from the standard process is precisely what an
 approver should look at.
 
-**Task settings are fixed at creation.** Template steps take their values from the request type's
-flow defaults; an ad-hoc task is initialised once, in the form shown when it is added. There is no
-edit-in-place afterwards — changing your mind means remove and re-add, which moves the plan's
-fingerprint and dismisses approvals, exactly as an edit should. The requester's job is deliberately
-small: raise the request, do their manual steps, approve.
+**Task settings are the designer's, never the requester's.** A template step carries the wiring
+its flow step declared; a slot fill carries the wiring of the preconfigured activity that was
+picked — there is no configuration form in the request at all. There is no edit-in-place either:
+changing your mind means remove and re-add, which moves the plan's fingerprint and dismisses
+approvals, exactly as an edit should. The requester's job is deliberately small: raise the request,
+do their manual steps, approve.
 
 **The approvals rail** shows every eligible approver and their state. The requester appears greyed
 out — you cannot approve your own request, which is `excludeRequester` on the rule, not a hard-coded
@@ -116,7 +118,7 @@ while any is open, the gate is red.
 
 **Data** is the interesting one during a run. Two fields are yours to edit — the maintenance window
 and the affected system. The rest are marked **written by a task** and are read-only: they are written
-by a task's output mapping. If a requester could type into them, they could forge the fingerprint of
+by a task, through the output wiring the request type declares. If a requester could type into them, they could forge the fingerprint of
 a document the server signed.
 
 **History** is the audit trail. Note the entries attributed to **System** — see below.
@@ -200,44 +202,42 @@ cancelling instead of answering. Try it as J. Novak: *Cancel run* is disabled.
 
 ## Task types — where the four steps come from
 
-The **Task types** screen is the catalogue. Each entry is a *named, pre-wired use* of something the
-server can already do:
+The **Task types** screen is the catalogue. Each entry is a **pure function**:
 
 - A **capability** is code — annotated Groovy or Java, discovered from `GET /actions`. `sendMail` is
   a capability.
-- A **task type** is configuration — which action it calls, where its inputs come from, where its
-  results are stored, and what the requester is asked to fill in. *Send notification* is a task type.
+- A **task type** is a *signature over a capability* — what it needs, what it produces, and which
+  action implements it. *Send notification* is a task type. It has **no reference to any request**:
+  where its inputs come from and where its results are stored is not its business.
 
-Open *Send notification* and the editor shows the whole wiring:
+Open *Send notification* and the editor shows exactly that:
 
 ```
-sendMail from=${task.fromAddress},
-         to=${request.recipients},
-         subject=${request.notificationSubject},
-         body=${request.notificationBody},
-         signature=${request.sha256}
+sendMail(from*, to*, subject*, body*, signature) → status, messageId
 ```
 
-**That dollar-brace form is a rendering, not a language.** Bindings are built with pickers and stored
-as structured records — a source kind (`LITERAL`, `REQUEST_DATA`, `TASK_PARAM`) and a path.
-Resolution is a dictionary lookup. Nothing parses or evaluates a string, which is what keeps this
-from becoming the free-text-expression hole the specification already closed for rules.
+Names and which inputs are required come from the action's own contract; the author supplies the
+**labels** — *Sender*, *Recipients* — because those labels are what the request designer wires
+against. A manual task type is the same idea with a form instead of an action: its form fields
+*are* what it produces, and the person's answers go wherever the use decides.
 
-**Input mappings** say where each action parameter comes from. **Output mappings** say where its
-results are stored on the request — and manual steps have them too, which is how the drafted message
-reaches the task that sends it. There is no direct task-to-task reference: an earlier step writes to
-the request's data, a later step reads it. At authoring time you cannot know which earlier task item
-will be in a plan, so the request is the bus.
+**The wiring lives in the request type.** Each flow step is a *call site*: its input bindings say
+where every input comes from — a fixed value, or a request field — and its output bindings say
+which results are kept, and on which field. That is what makes the catalogue actually reusable:
+the same task type can serve any process, because nothing in it names another process's fields.
 
-Two flags on a configuration field decide how much of it the requester gets. **fixed** (readonly)
-shows the field in the request but locks it; **hidden** keeps it off the request form entirely. Both
-kinds of field get their value from the step's defaults in the request type — the flow editor marks
-them, and warns when a required one has no default, because the requester cannot supply it. In the
-demo, *Signed on behalf of* is fixed and the sender address is hidden: organisation policy, not a
-per-request decision.
+**Bindings are structured records, not a language.** A source is a kind (`LITERAL` or
+`REQUEST_DATA`) and a value or path, built with pickers; resolution is a dictionary lookup. The
+dollar-brace form you may see in logs is a rendering for people to read — nothing parses or
+evaluates a string, which is what keeps this from becoming the free-text-expression hole the
+specification already closed for rules.
 
-The right-hand rail previews all of it live: the form the requester will see, the call that will run,
-and what it will store.
+There is no direct task-to-task reference: an earlier step writes to the request's data, a later
+step reads it. At design time you cannot know which task items a plan will hold — slots and loops
+see to that — so the request is the bus.
+
+The right-hand rail previews the signature live: what it needs, what it produces, and — for a
+manual type — the form the person will get.
 
 The catalogue itself lives in [`task-definitions.json.js`](../task-definitions.json.js) — strip the
 assignment line and the remainder is a valid JSON document, the one `GET /taskdefinitions` would
@@ -255,12 +255,12 @@ process is already there.
 
 Each step has two halves, and the split is deliberate.
 
-**Authoring** — what the requester gets, and what they may change:
-
-| | |
-| --- | --- |
-| **required** | The requester cannot remove it — the card's delete button is disabled, with the reason in its tooltip. |
-| **defaults** | Pre-filled into the task item — the sender address, who signs, the due date. Still editable per request. |
+**Data wiring** — the step as a call site for its task type. *What it needs*: each input is wired
+to **a fixed value** typed here (the sender address) or read **from the request** (the recipients
+an earlier step filled in). *What it produces*: each result is kept on a request field, or not
+kept at all. The editor warns when a required input is unwired — there is nobody downstream to
+supply it — and only *written-by-a-task* fields are offered as output targets, so a run can never
+move its own approval hash.
 
 **Runtime configuration** — how the *engine* behaves when it gets here. None of it is shown to the
 requester or editable by them, and none of it appears on the task form:
@@ -372,8 +372,8 @@ Step rules reuse the same `TaskRule` shape as gate rules — there is no second 
 
 ### It is all JSON
 
-**Export JSON** on this screen hands you the whole request type — flow, defaults, step rules, data
-parameters and gate rules — as [`request-types.json.js`](../request-types.json.js) holds it. Strip
+**Export JSON** on this screen hands you the whole request type — flow, data wiring, step rules,
+data parameters and gate rules — as [`request-types.json.js`](../request-types.json.js) holds it. Strip
 the assignment line and the remainder is a valid `.json` document, the one `GET /taskrequestdefs`
 would return. **Import JSON** takes one back, refusing an `apiVersion` it does not recognise rather
 than guessing at the shape.

@@ -4,6 +4,12 @@
    A request type carries four things: the status graph, the TASK FLOW, the data
    parameters, and the execution rules that gate a run.
 
+   Since v4 it also carries ALL the data wiring. A task type is a pure
+   function — inputs, outputs, no reference to any request — and each flow
+   step is a CALL SITE: inputBindings say where every input comes from (a
+   fixed value, or a request field), outputBindings say where each output is
+   kept. Steps hand work to each other only through the request's data.
+
    The task flow is the substantive part: an ACTIVITY GRAPH. Creating a request
    instantiates it, so every request of a type starts as the same process.
 
@@ -26,7 +32,7 @@
 /* ============================ the document ============================ */
 /* request-types.json.js is the source. Everything the editor changes is changed
    in this object, so Export hands back exactly what the server would store. */
-const RT_API = 'aixboms.requesttype/v3';
+const RT_API = 'aixboms.requesttype/v4';
 let REQUEST_TYPE_DOC = window.REQUEST_TYPES || {apiVersion:RT_API, requestTypes:[]};
 
 /* Refuse an unknown major rather than guessing at it — a file from a newer
@@ -91,15 +97,19 @@ function rc(step){
   if(!c.display)        c.display = [];
   if(!c.requires)       c.requires = [];
   if(!c.transitions)    c.transitions = [];
-  if(step.kind==='PLACEHOLDER' && !step.possibleActivities) step.possibleActivities = [];
+  if(step.kind==='PLACEHOLDER'){ if(!step.possibleActivities) step.possibleActivities = []; }
+  else{
+    if(!step.inputBindings)  step.inputBindings  = {};
+    if(!step.outputBindings) step.outputBindings = {};
+  }
   return c;
 }
 function stepMeta(step){
   if(step.kind==='PLACEHOLDER')
-    return {label: step.label||'Placeholder', icon: I.plus, manual:false, placeholder:true, params:[]};
+    return {label: step.label||'Placeholder', icon: I.plus, manual:false, placeholder:true};
   const d = TASK_DEFS[step.taskDefinition];
-  return d ? {label:d.label, icon:d.icon, manual:d.manual, placeholder:false, params:d.params, def:d}
-           : {label:step.taskDefinition+' (unknown)', icon:I.warn, manual:false, placeholder:false, params:[]};
+  return d ? {label:d.label, icon:d.icon, manual:d.manual, placeholder:false, def:d}
+           : {label:step.taskDefinition+' (unknown)', icon:I.warn, manual:false, placeholder:false};
 }
 function stepLabelById(id){
   const st = (S.definition.taskFlow||[]).find(x=>x.stepId===id);
@@ -130,7 +140,7 @@ function flowStep(step,i){
                      + (rc(step).dueBy?` · due ${rc(step).dueBy}`:'') + ' · ' : '')
           + (m.placeholder
               ? `may hold: ${(step.possibleActivities||[]).map(a=>a.label||(TASK_DEFS[a.taskDefinition]||{}).label||a.taskDefinition).join(', ')||'nothing yet'}`
-              : defaultsSummary(m.def||{params:[]},step)))}
+              : (m.def ? wiringSummary(m.def,step) : 'unknown task type')))}
           — then: ${(rc(step).transitions||[]).map(tr=>
             `${tr.when?describeTransition(tr)+' → ':'→ '}${stepLabelById(tr.to)}`).join('; ')
             || (step.end?'the process completes':'nowhere (dead end)')}</div>
@@ -184,22 +194,7 @@ function flowStep(step,i){
             <button class="btn sm ico" data-rt="act-del" data-i="${i}" data-j="${j}"
               title="Remove this activity">${I.trash}</button>
           </div>
-          ${ad && ad.params.length?`<div class="formgrid" style="padding:4px 0 0;max-width:none">
-            ${ad.params.map(p=>{
-              const v=(a.defaults||{})[p.name]??'';
-              const warn=(p.required&&!v&&p.type!=='boolean')
-                ?`<span class="hint" style="color:var(--bad)">Required — the requester cannot supply
-                    it, so it must be set here.</span>`:'';
-              if(p.type==='enum') return `<div class="field"><label>${esc(p.label)}</label>
-                <select data-rt="act-cfg" data-i="${i}" data-j="${j}" data-k="${p.name}">
-                  <option value="">—</option>
-                  ${(p.values||[]).map(o=>`<option ${o===v?'selected':''}>${esc(o)}</option>`).join('')}
-                </select>${warn}</div>`;
-              return `<div class="field"><label>${esc(p.label)}</label>
-                <input type="text" data-rt="act-cfg" data-i="${i}" data-j="${j}" data-k="${p.name}"
-                  value="${esc(v)}" placeholder="${esc(p.placeholder||'')}">${warn}</div>`;
-            }).join('')}
-          </div>`:''}
+          ${ad?`<div style="padding:2px 0 0">${wiringRows(ad, a, i, j)}</div>`:''}
           ${ad && ad.manual?`<div class="rolepick" style="margin-top:6px">
             ${knownRoles().map(role=>`
               <label class="rolechip ${((a.runtimeConfig||{}).assignedRoles||[]).includes(role)?'on':''}">
@@ -213,27 +208,13 @@ function flowStep(step,i){
       <button class="btn sm" data-rt="act-add" data-i="${i}" style="margin-top:6px">
         ${I.plus} Add an activity</button>`
       :`
-      <h4>Default values</h4>
-      <span class="hint">Pre-filled into the task when a request is created. Task settings are
-        design-time: the requester never edits them, so required fields need their value here.</span>
-      <div class="formgrid" style="padding:0;max-width:none">
-        ${m.params.length? m.params.map(p=>{
-          const v = (step.defaults||{})[p.name] ?? '';
-          const flag = '';
-          const warn = (p.required && !v && p.type!=='boolean')
-            ? `<span class="hint" style="color:var(--bad)">Required, and the requester cannot set
-                it — give it a value here.</span>` : '';
-          if(p.type==='enum') return `<div class="field"><label>${esc(p.label)}${flag}</label>
-            <select data-rt="cfg" data-i="${i}" data-k="${p.name}">
-              <option value="">—</option>
-              ${(p.values||[]).map(o=>`<option ${o===v?'selected':''}>${esc(o)}</option>`).join('')}
-            </select>${warn}</div>`;
-          return `<div class="field"><label>${esc(p.label)}${flag}</label>
-            <input type="text" data-rt="cfg" data-i="${i}" data-k="${p.name}"
-              value="${esc(v)}" placeholder="${esc(p.placeholder||'')}">${warn}</div>`;
-        }).join('') : `<div style="font-size:12.5px;color:var(--ink-3)">This task type has no
-          configuration fields.</div>`}
-      </div>`}
+      <h4>Data wiring</h4>
+      <span class="hint">A task type is a function — it says what it needs and what it produces,
+        and knows nothing about this request type. Here is the call site: where each value comes
+        from, and where each result is kept. Steps hand work to each other only through the
+        request's fields.</span>
+      ${m.def ? wiringRows(m.def, step, i, null)
+        : `<div style="font-size:12.5px;color:var(--ink-3)">Unknown task type — nothing to wire.</div>`}`}
 
       <h4 class="rtsec">Runtime configuration</h4>
       <span class="hint">How the engine behaves at this activity. None of it is shown to the
@@ -326,10 +307,66 @@ function transitionRows(step,i,dataParams){
     <button class="btn sm" data-rt="add-tr" data-i="${i}" style="margin-top:6px">${I.plus} Add transition</button>`;
 }
 
-function defaultsSummary(d,step){
-  const vals = (d.params||[]).filter(p=>(step.defaults||{})[p.name])
-    .map(p=>`${p.label}: ${step.defaults[p.name]}`);
-  return vals.length ? vals.join(' · ') : 'no defaults set';
+/* One wiring editor, shared by flow steps and a slot's preconfigured
+   activities (j = the activity index, null for a step). Deliberately plain
+   language: "a fixed value", "from the request" — the people using this are
+   not developers, and LITERAL/REQUEST_DATA are storage details. */
+function wiringRows(def, holder, i, j){
+  const at = j==null ? '' : ` data-j="${j}"`;
+  const dataParams = S.definition.dataParameters||[];
+  const ins  = taskInputs(def);
+  const outs = taskOutputs(def);
+  const inRows = ins.map(p=>{
+    const b = (holder.inputBindings||{})[p.name] || null;
+    const kind = b ? b.kind : '';
+    const missing = p.required && !hasSource(b);
+    return `<div class="te-map">
+      <span class="te-target">${esc(p.label||p.name)}${p.required?'<span class="req"> *</span>':''}</span>
+      <span class="te-arrow">←</span>
+      <select data-rt="wire-in" data-i="${i}"${at} data-k="${p.name}" style="width:auto;max-width:240px">
+        <option value="" ${!b?'selected':''}>nothing</option>
+        <option value="LIT" ${kind==='LITERAL'?'selected':''}>a fixed value…</option>
+        ${dataParams.map(q=>`<option value="R:${esc(q.name)}"
+          ${kind==='REQUEST_DATA'&&b.path===q.name?'selected':''}>from the request: ${esc(q.label)}</option>`).join('')}
+      </select>
+      ${kind==='LITERAL'?`<input type="text" data-rt="wire-lit" data-i="${i}"${at} data-k="${p.name}"
+        value="${esc(b.value??'')}" placeholder="${esc(p.placeholder||'the value')}" style="flex:1;min-width:130px">`:''}
+      ${missing?`<span class="hint" style="color:var(--bad);margin:0">Required — wire it, or the
+        run will block here.</span>`:''}
+    </div>`;
+  }).join('');
+  /* Only execution-owned fields may be written: writing a requester field
+     would move the approval hash mid-run. */
+  const outTargets = dataParams.filter(q=>q.owner==='EXECUTION');
+  const outRows = outs.map(o=>{
+    const b = (holder.outputBindings||{})[o.name] || null;
+    return `<div class="te-map">
+      <span class="te-target">${esc(o.label||o.name)}</span>
+      <span class="te-arrow">→</span>
+      <select data-rt="wire-out" data-i="${i}"${at} data-k="${o.name}" style="flex:1;min-width:160px">
+        <option value="">not kept</option>
+        ${outTargets.map(q=>`<option value="${esc(q.name)}"
+          ${b&&b.path===q.name?'selected':''}>kept on the request: ${esc(q.label)}</option>`).join('')}
+      </select>
+    </div>`;
+  }).join('');
+  return `${ins.length?`<h5 style="margin-top:8px">What it needs</h5>${inRows}`:''}
+    ${outs.length?`<h5>${def.manual?'Where the answers are kept':'What it produces'}</h5>${outRows}`:''}
+    ${!ins.length&&!outs.length?`<div style="font-size:12.5px;color:var(--ink-3)">Nothing to wire.</div>`:''}`;
+}
+function wiringSummary(def, holder){
+  const bits = taskInputs(def).map(p=>{
+    const b=(holder.inputBindings||{})[p.name];
+    return b&&b.kind==='LITERAL'&&b.value ? `${p.label}: ${b.value}` : null;
+  }).filter(Boolean);
+  const reads = taskInputs(def).filter(p=>{
+    const b=(holder.inputBindings||{})[p.name];
+    return b&&b.kind==='REQUEST_DATA'&&b.path;
+  }).length;
+  const stores = Object.keys(holder.outputBindings||{}).length;
+  if(reads)  bits.push(`reads ${reads} request field${reads===1?'':'s'}`);
+  if(stores) bits.push(`keeps ${stores} result${stores===1?'':'s'}`);
+  return bits.length ? bits.join(' · ') : 'not wired yet';
 }
 
 /* Precondition rules are TaskRule[] of kind 'data' — the same shape the gate uses. */
@@ -380,10 +417,15 @@ function flowIssues(){
       (st.possibleActivities||[]).forEach(a=>{
         const ad = TASK_DEFS[a.taskDefinition];
         if(!ad){ out.push(`Activity "${a.label||a.id}" uses an unknown task type.`); return; }
-        ad.params.filter(p=>p.required && p.type!=='boolean').forEach(p=>{
-          if(!((a.defaults||{})[p.name]))
-            out.push(`Activity "${a.label||ad.label}": required field "${p.label}" has no value — the requester cannot supply it.`);
+        taskInputs(ad).filter(p=>p.required).forEach(p=>{
+          if(!hasSource((a.inputBindings||{})[p.name]))
+            out.push(`Activity "${a.label||ad.label}": required input "${p.label}" is not wired.`);
         });
+      });
+    } else if(m.def){
+      taskInputs(m.def).filter(p=>p.required).forEach(p=>{
+        if(!hasSource((st.inputBindings||{})[p.name]))
+          out.push(`"${m.label}": required input "${p.label}" is not wired.`);
       });
     }
   });
@@ -500,14 +542,18 @@ function defFlow(){
    with the referencing places named. */
 function dataParamUses(name){
   const uses=[];
-  (TASK_DOC.definitions||[]).forEach(d=>{
-    const sc=d.serverActionConfig||{}, mc=d.manualTaskConfig||{};
-    (sc.inputs||[]).forEach(b=>{ if(b.source&&b.source.kind==='REQUEST_DATA'&&b.source.path===name)
-      uses.push(`${d.name} reads it (input "${b.target}")`); });
-    [...(sc.outputs||[]),...(mc.outputs||[])].forEach(m=>{ if(m.target&&m.target.path===name)
-      uses.push(`${d.name} writes it (output "${m.source}")`); });
-  });
+  const scanWiring=(holder,where)=>{
+    Object.entries(holder.inputBindings||{}).forEach(([k,b])=>{
+      if(b&&b.kind==='REQUEST_DATA'&&b.path===name) uses.push(`${where} reads it (input "${k}")`);
+    });
+    Object.entries(holder.outputBindings||{}).forEach(([k,b])=>{
+      if(b&&b.path===name) uses.push(`${where} writes it (output "${k}")`);
+    });
+  };
   (S.definition.taskFlow||[]).forEach(st=>{
+    scanWiring(st, `"${stepMeta(st).label}"`);
+    (st.possibleActivities||[]).forEach(a=>
+      scanWiring(a, `activity "${a.label||a.taskDefinition}"`));
     const c=st.runtimeConfig||{};
     (c.requires||[]).forEach(rule=>{ if(rule.path===name)
       uses.push(`a precondition on "${stepMeta(st).label}"`); });
@@ -618,7 +664,7 @@ function dlgRtExport(){
       <button class="iconbtn" data-act="close">${I.cross}</button></div>
     <div class="dbody">
       <p style="margin:0;color:var(--ink-3);font-size:13px">The request type as the server would
-        store it — flow, defaults, step rules, data parameters and gate rules. This is the whole
+        store it — flow, data wiring, step rules, data parameters and gate rules. This is the whole
         process definition, and there is no code in it.</p>
       <textarea id="rt-json" readonly rows="20" class="mono"
         style="font-size:11.5px;line-height:1.45">${esc(requestTypeJson())}</textarea>
@@ -713,7 +759,8 @@ document.addEventListener('click', e=>{
       if(btn.dataset.def==='__placeholder'){
         flow.push(Object.assign(base, {kind:'PLACEHOLDER', label:'Additional steps', possibleActivities:[]}));
       }else{
-        flow.push(Object.assign(base, {taskDefinition:btn.dataset.def, defaults:{}}));
+        flow.push(Object.assign(base, {taskDefinition:btn.dataset.def,
+          inputBindings:{}, outputBindings:{}}));
       }
       S.flowOpen = id;
       closeModal(); render(); toast('Activity added — wire it in with transitions'); break;
@@ -722,7 +769,8 @@ document.addEventListener('click', e=>{
       const list = flow[i].possibleActivities = flow[i].possibleActivities||[];
       const first = Object.values(TASK_DEFS)[0];
       list.push({id:'a'+(++S.seq), label:'', taskDefinition:first?first.name:'',
-        defaults:{}, runtimeConfig:{assignedRoles:[], dueBy:null, display:[], requires:[]}});
+        inputBindings:{}, outputBindings:{},
+        runtimeConfig:{assignedRoles:[], dueBy:null, display:[], requires:[]}});
       render(); break;
     }
     case 'act-del': flow[i].possibleActivities.splice(+btn.dataset.j,1); render(); break;
@@ -763,7 +811,28 @@ document.addEventListener('change', e=>{
   const rt = el.dataset.rt; if(!rt) return;
   const flow = S.definition.taskFlow;
   const i = +el.dataset.i;
-  if(rt==='cfg'){ flow[i].defaults[el.dataset.k] = el.value; render(); return; }
+  /* The wiring rows serve both flow steps and slot activities: data-j picks
+     the activity, its absence means the step itself. */
+  const wireHolder = () => el.dataset.j!==undefined
+    ? flow[i].possibleActivities[+el.dataset.j] : flow[i];
+  if(rt==='wire-in'){
+    const h = wireHolder(); const ib = h.inputBindings = h.inputBindings||{};
+    if(!el.value) delete ib[el.dataset.k];
+    else if(el.value==='LIT') ib[el.dataset.k] = {kind:'LITERAL', value:''};
+    else ib[el.dataset.k] = {kind:'REQUEST_DATA', path:el.value.slice(2)};
+    render(); return;
+  }
+  if(rt==='wire-lit'){
+    const h = wireHolder(); const b = (h.inputBindings||{})[el.dataset.k];
+    if(b) b.value = el.value;
+    render(); return;
+  }
+  if(rt==='wire-out'){
+    const h = wireHolder(); const ob = h.outputBindings = h.outputBindings||{};
+    if(!el.value) delete ob[el.dataset.k];
+    else ob[el.dataset.k] = {kind:'REQUEST_DATA', path:el.value};
+    render(); return;
+  }
   if(rt==='start'){
     /* exactly one start: setting it here clears it everywhere else */
     if(el.checked){ flow.forEach(x=>{ x.start=false; }); flow[i].start=true; }
@@ -775,12 +844,9 @@ document.addEventListener('change', e=>{
   if(rt==='act-label'){ flow[i].possibleActivities[+el.dataset.j].label = el.value; render(); return; }
   if(rt==='act-def'){
     const a = flow[i].possibleActivities[+el.dataset.j];
-    a.taskDefinition = el.value; a.defaults = {};   /* new type, fresh configuration */
+    a.taskDefinition = el.value;
+    a.inputBindings = {}; a.outputBindings = {};   /* new type, fresh wiring */
     render(); return;
-  }
-  if(rt==='act-cfg'){
-    const a = flow[i].possibleActivities[+el.dataset.j];
-    (a.defaults = a.defaults||{})[el.dataset.k] = el.value; render(); return;
   }
   if(rt==='act-role'){
     const a = flow[i].possibleActivities[+el.dataset.j];

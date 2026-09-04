@@ -97,7 +97,7 @@ function taskConfigHash(r){
      approver approved includes where the process may go — reassigning a step,
      rewiring an edge or filling a placeholder slot all move the hash. */
   const items = (r.taskItems||[]).map(t=>
-    ({d:t.def, k:t.kind, c:t.config, q:t.requires, x:t.transitions,
+    ({d:t.def, k:t.kind, i:t.inputBindings, o:t.outputBindings, q:t.requires, x:t.transitions,
       b:t.start, e:t.end, a:t.assignedRoles, u:t.dueBy}));
   return fnv(JSON.stringify({tasks:items, data:authorData(r)}));
 }

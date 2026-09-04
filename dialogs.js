@@ -34,8 +34,10 @@ function dlgAddTask(slotId){
       <div class="tiles">
         ${acts.map(a=>{
           const d = TASK_DEFS[a.taskDefinition];
-          const cfg = Object.entries(a.defaults||{}).filter(([,v])=>v!=='')
-            .map(([k,v])=>`${k}: ${v}`).join(' · ');
+          const cfg = taskInputs(d).map(p=>{
+            const b=(a.inputBindings||{})[p.name];
+            return b&&b.kind==='LITERAL'&&b.value ? `${p.label||p.name}: ${b.value}` : null;
+          }).filter(Boolean).join(' · ');
           return `<button class="tile" data-act="fill-slot"
               data-activity="${esc(a.id)}" data-slot="${slot.id}">
             <span class="ti">${d.icon}</span><b>${esc(a.label||d.label)}</b>

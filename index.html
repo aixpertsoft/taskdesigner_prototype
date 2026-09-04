@@ -79,7 +79,10 @@ function instantiateFlow(definition, seqBase){
     possibleActivities:copy(step.possibleActivities||[]),
     start:!!step.start, end:!!step.end,
     status:'NOT_RUN', attempts:0,
-    config:copy(step.defaults||{}),
+    /* The wiring — where each input comes from, where each output is stored.
+       Decided in the request type; the task type itself knows nothing of it. */
+    inputBindings:copy(step.inputBindings||{}),
+    outputBindings:copy(step.outputBindings||{}),
     /* runtimeConfig is the administrator half: how the engine behaves at this
        activity — including where the process goes next. The request owns its
        copy of the graph, so template edits never touch in-flight requests. */

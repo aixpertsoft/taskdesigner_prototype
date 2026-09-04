@@ -79,15 +79,16 @@ route on her answer; there is no decline button and no continue button.
 
 **2. Watch the data fill in.** The **Data** tab has two fields you own and several marked *written
 by a task*. The subject, text, fingerprint and delivery status are written by the run, through the
-task definitions' output mappings, and are read-only by design.
+output wiring the request type declares, and are read-only by design.
 
 **3. Watch a task fail.** Put an address at `@invalid.example` in the recipients at step 3. The send
 fails with `550 5.1.1 … recipient address rejected`, the run stops there, and everything before it
 keeps its results — the failure badge and the execution log are both real.
 
-Also worth a look: **Task types** in the top nav, where the four steps are authored — which server
-action each one calls, and how values are wired between them. And **Request types**, where changing
-the required approval count makes the gate respond immediately: configuration, not code.
+Also worth a look: **Task types** in the top nav — pure functions: what each one needs, what it
+produces, and which server action implements it. How values flow between them is wired per step in
+**Request types**, where changing the required approval count also makes the gate respond
+immediately: configuration, not code.
 
 ### What is real and what is not
 

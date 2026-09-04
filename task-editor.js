@@ -2,17 +2,25 @@
    Task Editor.
 
    Owns the task-definition model: the catalogue loaded from
-   task-definitions.json.js, the binding resolver that turns a definition plus a
-   task item into an actual action call, and the editor UI for authoring them.
+   task-definitions.json.js, the binding resolver that turns a task type plus a
+   task item into an actual action call, and the editor UI for authoring types.
 
-   index.html is a *consumer* of this — it reads TASK_DEFS and calls the four
+   A task type is a PURE FUNCTION: a signature — inputs it needs, outputs it
+   produces — and, for a server task, the action that implements it. It has NO
+   reference to any request. Where each input comes from and where each output
+   is stored is decided per use, in the request type's flow: the request type
+   is the call site. That wiring lives on the TASK ITEM (inputBindings /
+   outputBindings, copied from the flow step at instantiation), which is why
+   the resolver here takes the item, not just the definition.
+
+   index.html is a *consumer* of this — it reads TASK_DEFS and calls the
    runtime helpers. Both files are classic scripts, so they share one global
-   lexical scope; this one loads second and may reference I, S, esc, fnv, stamp,
-   render, toast and OCCUPIED_PORTS from index.html at call time.
+   lexical scope; this one loads second and may reference I, S, esc, fnv,
+   stamp, render, toast from index.html at call time.
 
    The rule that governs the whole file: ${request.foo} is a RENDERING of a
    structured binding, never a language. Nothing here parses or evaluates a
-   string. Resolution is a dictionary lookup over three source kinds.
+   string. Resolution is a dictionary lookup over two source kinds.
    =========================================================================== */
 "use strict";
 
@@ -62,14 +70,14 @@ const UNDELIVERABLE = /@(invalid|ghost)\./i;
 /* ============================ the catalogue ============================ */
 /* TASK_DOC is the JSON document — the thing you would POST to the server.
    TASK_DEFS is the materialised view every consumer reads. */
-let TASK_DOC = window.TASK_DEFINITIONS || {apiVersion:'aixboms.taskdefinition/v1', definitions:[]};
-const TASK_DEFS = {};
+const TD_API = 'aixboms.taskdefinition/v2';
+let TASK_DOC = window.TASK_DEFINITIONS || {apiVersion:TD_API, definitions:[]};
 
-/* The stored shape is a discriminated union — the kind-specific fields live under
-   serverActionConfig or manualTaskConfig, so a reader can see at a glance which
-   half applies. The runtime shape is flat, because every consumer already reads
-   def.params / def.inputs / def.resultParams. flatten() and nest() are the only
-   two places that know about the difference. */
+/* The stored shape keeps the kind-specific implementation under
+   serverActionConfig / manualTaskConfig; the signature (inputs/outputs) is
+   top-level, because it is the task's face regardless of kind. The runtime
+   shape is flat. flatten() and nest() are the only two places that know the
+   difference. */
 function flatten(raw){
   const s = raw.serverActionConfig || {};
   const m = raw.manualTaskConfig   || {};
@@ -77,12 +85,9 @@ function flatten(raw){
   return {
     name:raw.name||'', label:raw.label||'', icon:raw.icon||'gear',
     description:raw.description||'', kind:raw.kind||'SERVER',
-    params: copy(raw.params),
     action: s.action||'',
-    inputs: copy(s.inputs),
-    /* Both kinds produce something worth keeping: an action's return values, or a
-       person's answers. One `outputs` list serves both. */
-    outputs: copy(raw.kind==='MANUAL' ? m.outputs : s.outputs),
+    inputs: copy(raw.inputs),
+    outputs: copy(raw.outputs),
     resultParams: copy(m.resultParams),
     /* The verb on the button that closes it — "Submit draft", "Submit decision". */
     completeLabel: m.completeLabel || 'Complete',
@@ -90,21 +95,23 @@ function flatten(raw){
 }
 function nest(d){
   const out = {name:d.name, label:d.label, icon:d.icon, description:d.description||'',
-               kind:d.kind, params:d.params||[]};
+               kind:d.kind};
   if(d.kind==='SERVER'){
-    out.serverActionConfig = {action:d.action||'', inputs:d.inputs||[], outputs:d.outputs||[]};
+    out.inputs  = d.inputs||[];
+    out.outputs = d.outputs||[];
+    out.serverActionConfig = {action:d.action||''};
   }else{
     out.manualTaskConfig = {completeLabel:d.completeLabel||'Complete',
-                            resultParams:d.resultParams||[], outputs:d.outputs||[]};
+                            resultParams:d.resultParams||[]};
   }
   return out;
 }
-function serverConfig(raw){ return raw.serverActionConfig || {}; }
-function outputsOf(raw){
-  return (raw.kind==='MANUAL'
-    ? (raw.manualTaskConfig||{}).outputs
-    : (raw.serverActionConfig||{}).outputs) || [];
-}
+
+/* The signature, kind-independent. A manual task's inputs are nothing (its
+   context comes from runtimeConfig.display); its outputs are the form's
+   answers — declared once as resultParams, never duplicated. */
+function taskInputs(def){  return def.kind==='MANUAL' ? [] : (def.inputs||[]); }
+function taskOutputs(def){ return def.kind==='MANUAL' ? (def.resultParams||[]) : (def.outputs||[]); }
 
 function materialise(d){
   const f = flatten(d);
@@ -115,6 +122,7 @@ function materialise(d){
     manual: f.kind === 'MANUAL',
   });
 }
+const TASK_DEFS = {};
 function reloadDefs(){
   Object.keys(TASK_DEFS).forEach(k=>{ delete TASK_DEFS[k]; });
   (TASK_DOC.definitions||[]).forEach(d=>{ TASK_DEFS[d.name] = materialise(d); });
@@ -122,39 +130,37 @@ function reloadDefs(){
 reloadDefs();
 
 /* ============================ resolution ============================ */
-/* Three source kinds. No fourth, and no operators — see the file header. */
-function resolveSource(src, t, r){
+/* Two source kinds. No third, and no operators — see the file header. The
+   bindings live on the task item, put there by the request type. */
+function resolveSource(src, r){
   if(!src) return undefined;
   switch(src.kind){
     case 'LITERAL':      return src.value;
-    case 'TASK_PARAM':   return t ? t.config[src.path] : undefined;
-    case 'REQUEST_DATA': return r ? r.data[src.path]   : undefined;
+    case 'REQUEST_DATA': return r ? r.data[src.path] : undefined;
     default:             return undefined;
   }
 }
 function resolveInputs(def, t, r){
   const out = {};
-  (def.inputs||[]).forEach(b=>{ out[b.target] = resolveSource(b.source, t, r); });
+  taskInputs(def).forEach(p=>{ out[p.name] = resolveSource((t.inputBindings||{})[p.name], r); });
   return out;
 }
-/* Which of the action's REQUIRED parameters would resolve to nothing, and where
-   each was supposed to come from. This is the generic "you cannot run this yet":
-   the action's own declared contract, checked against what the bindings can
-   actually deliver right now. No configuration needed. */
+/* Which of the task's REQUIRED inputs would resolve to nothing, and where each
+   was supposed to come from. This is the generic "you cannot run this yet":
+   the signature's own declared contract, checked against what the wiring can
+   actually deliver right now. */
 function missingInputs(def, t, r){
   if(!def || def.kind!=='SERVER') return [];
-  const a = SERVER_ACTIONS[def.action]; if(!a) return [];
   const inputs = resolveInputs(def, t, r);
-  return a.parameters.filter(p=>p.required).filter(p=>{
+  return taskInputs(def).filter(p=>p.required).filter(p=>{
     const v = inputs[p.name];
     return v===undefined || v===null || String(v).trim()==='';
-  }).map(p=>({target:p.name, source:((def.inputs||[]).find(b=>b.target===p.name)||{}).source||null}));
+  }).map(p=>({target:p.name, source:(t.inputBindings||{})[p.name]||null}));
 }
 /* Where a missing value was supposed to come from, in words a person can act on. */
 function describeSource(src){
-  if(!src) return 'it is not mapped to anything';
-  if(src.kind==='LITERAL') return 'its configured value is empty';
-  if(src.kind==='TASK_PARAM') return `the task field "${src.path}" is empty`;
+  if(!src) return 'it is not wired to anything';
+  if(src.kind==='LITERAL') return 'its fixed value is empty';
   if(src.kind==='REQUEST_DATA'){
     const p=(typeof S!=='undefined'?S.definition.dataParameters:[]).find(x=>x.name===src.path);
     return p&&p.owner==='EXECUTION'
@@ -169,24 +175,18 @@ function hasSource(src){
   if(src.kind==='LITERAL') return src.value!==undefined && src.value!=='';
   return !!src.path;
 }
-/* The ${…} form is produced FROM the bindings, for people to read. It is never
-   read back: no code path parses this string. */
-function renderSource(src){
-  if(!hasSource(src)) return '∅';
-  if(src.kind==='LITERAL')      return JSON.stringify(src.value);
-  if(src.kind==='TASK_PARAM')   return '${task.'+src.path+'}';
-  if(src.kind==='REQUEST_DATA') return '${request.'+src.path+'}';
-  return '?';
-}
+/* The signature, rendered for people: printMessage(message, level) → printedAt.
+   Never read back: no code path parses this string. */
 function renderCall(def){
   if(!def || def.kind!=='SERVER') return '(no server action — a person closes this task)';
-  const args = (def.inputs||[]).map(b=>`${b.target}=${renderSource(b.source)}`).join(', ');
-  return `${def.action||'?'} ${args}`;
+  const args = taskInputs(def).map(p=>p.name+(p.required?'*':'')).join(', ');
+  const rets = taskOutputs(def).map(o=>o.name).join(', ');
+  return `${def.action||'?'}(${args})${rets?` → ${rets}`:''}`;
 }
 function renderResolvedCall(def, t, r){
   if(def.kind!=='SERVER') return def.label;
   const inputs = resolveInputs(def, t, r);
-  const args = (def.inputs||[]).map(b=>`${b.target}=${JSON.stringify(inputs[b.target] ?? null)}`).join(', ');
+  const args = taskInputs(def).map(p=>`${p.name}=${JSON.stringify(inputs[p.name] ?? null)}`).join(', ');
   return `${def.action} ${args}`;
 }
 
@@ -206,17 +206,18 @@ function runServerAction(def, inputs, r){
     default:             return {};
   }
 }
-/* Output mappings are how a task stores something on the request — the id of a
-   created component, the document a later task reads. This is the only writer
-   of those data fields; the requester cannot edit them by hand. */
-function applyOutputs(def, outs, r){
+/* Output bindings are how a task stores something on the request — the id of a
+   created component, the document a later task reads. The request type wired
+   them; this is the only writer of those data fields. */
+function applyOutputs(def, t, outs, r){
   const written = {};
-  (def.outputs||[]).forEach(m=>{
-    if(!m.target || m.target.kind!=='REQUEST_DATA' || !m.target.path) return;
-    const v = outs[m.source];
+  taskOutputs(def).forEach(o=>{
+    const b = (t.outputBindings||{})[o.name];
+    if(!b || b.kind!=='REQUEST_DATA' || !b.path) return;
+    const v = outs[o.name];
     if(v===undefined) return;
-    r.data[m.target.path] = v;
-    written[m.target.path] = v;
+    r.data[b.path] = v;
+    written[b.path] = v;
   });
   return written;
 }
@@ -233,35 +234,30 @@ function failureFor(def, inputs){
     source:'de.aixpertsoft.taskrequest.actions.SendMailAction:96',
   };
 }
-function taskSummary(def, cfg){
-  const vals = (def.params||[]).filter(p=>cfg[p.name]).slice(0,3).map(p=>cfg[p.name]);
+/* A one-line "how this use is configured" — the fixed values its wiring set. */
+function taskSummary(def, t){
+  const vals = taskInputs(def).map(p=>{
+    const b = (t.inputBindings||{})[p.name];
+    return b && b.kind==='LITERAL' && b.value ? b.value : null;
+  }).filter(Boolean).slice(0,3);
   return vals.length ? vals.join(' · ') : '—';
-}
-/* Data parameters an execution writes are server-owned: authors must not type
-   into them, or a requester could forge the id of something the server made. */
-function isExecutionWritten(path){
-  return (TASK_DOC.definitions||[]).some(d=>outputsOf(d).some(m=>
-    m.target && m.target.kind==='REQUEST_DATA' && m.target.path===path));
 }
 
 /* ============================ validation ============================ */
+/* Only the signature is validated here. Whether a USE of the type is fully
+   wired is the request type's business — flowIssues() checks it there. */
 function defIssues(d){
   const out = [];
   if(!String(d.name||'').trim())  out.push('Give it a name — this is the id requests will store.');
   if(!String(d.label||'').trim()) out.push('Give it a label.');
   if(d.kind==='SERVER'){
-    const a = SERVER_ACTIONS[d.action];
-    if(!a) out.push('Pick the server action this task runs.');
-    else a.parameters.filter(p=>p.required).forEach(p=>{
-      const b = (d.inputs||[]).find(x=>x.target===p.name);
-      if(!hasSource(b && b.source)) out.push(`Required action input "${p.name}" is not mapped.`);
-    });
+    if(!SERVER_ACTIONS[d.action]) out.push('Pick the server action this task runs.');
   }else{
-    if(!(d.resultParams||[]).length) out.push('A manual task needs at least one result field.');
+    if(!(d.resultParams||[]).length) out.push('A manual task needs at least one form field.');
+    (d.resultParams||[]).forEach((p,i)=>{
+      if(!String(p.name||'').trim()) out.push(`Form field ${i+1} has no name.`);
+    });
   }
-  (d.params||[]).forEach((p,i)=>{
-    if(!String(p.name||'').trim()) out.push(`Configuration field ${i+1} has no name.`);
-  });
   return out;
 }
 function usedBy(name){
@@ -273,8 +269,7 @@ const E = {screen:'list', draft:null, original:null};
 
 function blankDef(){
   return {name:'', label:'', icon:'gear', description:'', kind:'SERVER',
-          params:[], action:'', inputs:[], outputs:[],
-          resultParams:[]};
+          action:'', inputs:[], outputs:[], resultParams:[]};
 }
 function rawDef(name){
   return (TASK_DOC.definitions||[]).find(d=>d.name===name);
@@ -283,33 +278,31 @@ function startEdit(name){
   const raw = name ? rawDef(name) : null;
   /* The editor works on the flat shape; nest() puts it back on save. */
   E.draft = raw ? flatten(raw) : blankDef();
-  /* Normalise the binding rows against the action's declared order, so the editor
-     can address them positionally however the JSON document happened to list them. */
-  syncBindings(E.draft);
+  syncSignature(E.draft);
   E.original = name || null;
   E.screen = 'edit';
   render();
 }
-/* Keep the input/output rows in step with the chosen action's declared contract. */
-function syncBindings(d){
-  if(d.kind==='MANUAL'){
-    /* A manual task's "outputs" are its result fields — one row each. */
-    d.inputs=[];
-    d.outputs = (d.resultParams||[]).map(p=>{
-      const prev = (d.outputs||[]).find(x=>x.source===p.name);
-      return prev || {source:p.name, target:{kind:'NONE'}};
-    });
-    return;
-  }
+/* The signature mirrors the chosen action's declared contract: one input per
+   parameter, one output per return value. Names, types and requiredness come
+   from the action; the author supplies the labels the request designer will
+   wire against. Re-picking the action keeps labels for names that survive. */
+function syncSignature(d){
+  if(d.kind==='MANUAL'){ d.inputs=[]; d.outputs=[]; return; }
   const a = SERVER_ACTIONS[d.action];
   if(!a){ d.inputs=[]; d.outputs=[]; return; }
+  const nice = n => n.replace(/([a-z])([A-Z])/g,'$1 $2').replace(/^./,c=>c.toUpperCase());
   d.inputs = a.parameters.map(p=>{
-    const prev = (d.inputs||[]).find(x=>x.target===p.name);
-    return prev || {target:p.name, source:{kind:'TASK_PARAM', path:''}};
+    const prev = (d.inputs||[]).find(x=>x.name===p.name) || {};
+    return {name:p.name, label:prev.label||nice(p.name),
+            type:p.type==='enum'?'enum':'text',
+            required:!!p.required,
+            ...(p.values?{values:p.values.slice()}:{}),
+            placeholder:prev.placeholder||''};
   });
   d.outputs = a.outParameters.map(o=>{
-    const prev = (d.outputs||[]).find(x=>x.source===o.name);
-    return prev || {source:o.name, target:{kind:'NONE'}};
+    const prev = (d.outputs||[]).find(x=>x.name===o.name) || {};
+    return {name:o.name, label:prev.label||nice(o.name), type:'text'};
   });
 }
 function saveDraft(){
@@ -368,10 +361,10 @@ function teList(){
           </div>
           <div class="rmeta">
             ${d.manual
-              ? `<span>closed by a person</span>`
-              : `<span class="mono">${esc(d.action||'—')}</span>`}
-            <span class="dot">·</span><span>${d.params.length} configuration field${d.params.length===1?'':'s'}</span>
-            ${d.outputs.length?`<span class="dot">·</span><span>stores ${d.outputs.filter(o=>o.target&&o.target.kind==='REQUEST_DATA').length} value(s)</span>`:''}
+              ? `<span>closed by a person</span>
+                 <span class="dot">·</span><span>${(d.resultParams||[]).length} form field${(d.resultParams||[]).length===1?'':'s'}</span>`
+              : `<span class="mono">${esc(d.action||'—')}</span>
+                 <span class="dot">·</span><span>needs ${taskInputs(d).length} · produces ${taskOutputs(d).length}</span>`}
             <span class="dot">·</span><span>${n?`used by ${n} request${n===1?'':'s'}`:'not used yet'}</span>
           </div>
         </div>
@@ -380,13 +373,13 @@ function teList(){
     }).join('')}
   </div>
   <p style="margin:14px 0 0;color:var(--ink-3);font-size:12.5px;max-width:80ch">
-    A task type is a <b>named, pre-wired use</b> of something the server can already do. The
-    executable stays code — an annotated Groovy or Java action. Which action it calls, where its
-    inputs come from and where its results are stored is configuration, and that is what this
-    screen edits.</p>`;
+    A task type is a <b>pure function</b>: what it needs, what it produces, and — for a server
+    task — the annotated Groovy or Java action that implements it. It knows nothing about any
+    request. Where its inputs come from and where its results are stored is wired per use, in
+    the request type's task flow.</p>`;
 }
 
-/* ---- one row of the config-field editor, shared by params and resultParams ---- */
+/* ---- one row of the form-field editor (manual tasks) ---- */
 function fieldRows(list, which){
   if(!list.length) return `<div class="empty" style="padding:14px">No fields yet.</div>`;
   return list.map((p,i)=>`
@@ -412,43 +405,25 @@ function fieldRows(list, which){
     </div>`).join('');
 }
 
-/* ---- one input mapping row: action parameter <- source ---- */
-function mapRow(d, param, i){
-  const b = d.inputs[i];
-  const src = b.source||{};
-  const dataParams = (typeof S!=='undefined' ? S.definition.dataParameters : []);
-  const kinds = [['TASK_PARAM','Task field'],['REQUEST_DATA','Request data'],['LITERAL','Literal'],['NONE','not mapped']];
-  let picker;
-  if(src.kind==='LITERAL'){
-    picker = `<input type="text" data-te-map="${i}" data-k="value" value="${esc(src.value??'')}" placeholder="value" style="flex:1">`;
-  }else if(src.kind==='REQUEST_DATA'){
-    picker = `<select data-te-map="${i}" data-k="path" style="flex:1">
-      <option value="">choose…</option>
-      ${dataParams.map(p=>`<option value="${esc(p.name)}" ${src.path===p.name?'selected':''}>${esc(p.label)} (${esc(p.name)})</option>`).join('')}
-    </select>`;
-  }else if(src.kind==='TASK_PARAM'){
-    picker = `<select data-te-map="${i}" data-k="path" style="flex:1">
-      <option value="">choose…</option>
-      ${(d.params||[]).map(p=>`<option value="${esc(p.name)}" ${src.path===p.name?'selected':''}>${esc(p.label||p.name)} (${esc(p.name)})</option>`).join('')}
-    </select>`;
-  }else{
-    picker = `<span style="flex:1;color:var(--ink-3);font-size:12.5px">nothing is passed</span>`;
-  }
-  return `<div class="te-map">
-    <span class="te-target mono">${esc(param.name)}${param.required?'<span class="req"> *</span>':''}</span>
-    <span class="te-arrow">←</span>
-    <select data-te-map="${i}" data-k="kind" style="width:auto">
-      ${kinds.map(([k,l])=>`<option value="${k}" ${(src.kind||'NONE')===k?'selected':''}>${l}</option>`).join('')}
-    </select>
-    ${picker}
-  </div>`;
+/* ---- signature rows: names and requiredness fixed by the action, labels
+        authored here — they are what the request designer wires against ---- */
+function sigRows(list, which){
+  return list.map((p,i)=>`
+    <div class="te-map">
+      <span class="te-target mono">${esc(p.name)}${p.required?'<span class="req"> *</span>':''}</span>
+      <input type="text" data-te-sig="${which}" data-i="${i}" data-k="label"
+        value="${esc(p.label||'')}" placeholder="label" style="width:190px">
+      ${which==='inputs'?`
+      <input type="text" data-te-sig="${which}" data-i="${i}" data-k="placeholder"
+        value="${esc(p.placeholder||'')}" placeholder="example value (shown as a hint)"
+        style="flex:1;min-width:130px">`:''}
+    </div>`).join('');
 }
 
 function teEditor(){
   const d = E.draft;
   const action = SERVER_ACTIONS[d.action];
   const issues = defIssues(d);
-  const dataParams = (typeof S!=='undefined' ? S.definition.dataParameters : []);
 
   return `
   <div class="rq-head">
@@ -491,7 +466,7 @@ function teEditor(){
             <button class="${d.kind==='MANUAL'?'on':''}" data-te="kind" data-v="MANUAL">Manual</button>
           </div>
           <span class="hint">${d.kind==='SERVER'
-            ? 'The server runs it. Pick the action below and wire its inputs.'
+            ? 'The server runs it. Pick the action below — its contract becomes this task’s signature.'
             : 'A person carries it out. Execution parks here until they close it.'}</span>
         </div>
       </section>
@@ -509,60 +484,32 @@ function teEditor(){
                 `<option value="${a.name}" ${d.action===a.name?'selected':''}>${esc(a.label)} — ${esc(a.name)}</option>`).join('')}
             </select>
             <span class="hint">From <span class="mono">GET /actions</span>. Adding a new one is code;
-              wiring it up is not.</span>
+              naming a use of it is not.</span>
           </div>
-          ${action?`<div class="te-contract">
-            <div><b>accepts</b> ${action.parameters.map(p=>
-              `<span class="kv">${esc(p.name)}${p.required?'<span class="req"> *</span>':''}</span>`).join(' ')}</div>
-            <div style="margin-top:5px"><b>returns</b> ${action.outParameters.map(o=>
-              `<span class="kv">${esc(o.name)}</span>`).join(' ')||'<span class="mono">nothing</span>'}</div>
-            <div class="mono" style="margin-top:6px;color:var(--ink-3);font-size:11px">${esc(action.description)}</div>
-          </div>`:''}
-        </div>
-      </section>`:''}
-
-      <section class="panel">
-        <div class="panel-head"><h3>Configuration fields</h3>
-          <span class="pill neutral">${d.params.length} field${d.params.length===1?'':'s'}</span></div>
-        <div class="panel-body">
-          <span class="hint">Design-time settings that control how this task behaves — the sender
-            address, the template to use. Their values come from the request type's flow defaults,
-            or once when a task is added by hand; the input mappings below feed them to the action
-            as task fields.</span>
-          ${fieldRows(d.params,'params')}
-          <button class="btn sm" data-te="add-field" data-f="params">${I.plus} Add field</button>
+          ${action?`<div class="mono" style="color:var(--ink-3);font-size:11px">${esc(action.description)}</div>`:''}
         </div>
       </section>
 
-      ${d.kind==='SERVER'&&action?`
+      ${action?`
       <section class="panel">
-        <div class="panel-head"><h3>Input mappings</h3></div>
+        <div class="panel-head"><h3>What it needs</h3></div>
         <div class="panel-body">
-          <span class="hint">Where each action input comes from. Built with pickers and stored as
-            data — the <span class="mono">\${…}</span> form is only how it reads.</span>
-          ${action.parameters.map((p,i)=>mapRow(d,p,i)).join('')}
+          <span class="hint">The action's parameters, one row each. Names and which are required
+            come from the action itself; you give each a label — that label is what the request
+            designer sees when wiring values in. <span class="req">*</span> = the run cannot start
+            this task without it.</span>
+          ${sigRows(d.inputs,'inputs')}
         </div>
       </section>
 
       <section class="panel">
-        <div class="panel-head"><h3>Output mappings</h3></div>
+        <div class="panel-head"><h3>What it produces</h3></div>
         <div class="panel-body">
-          <span class="hint">Where results are stored on the request, so a later task or a rule can
-            read them — the delivery status, for instance.</span>
-          ${action.outParameters.map((o,i)=>{
-            const m = d.outputs[i]||{source:o.name,target:{kind:'NONE'}};
-            const tgt = m.target||{kind:'NONE'};
-            return `<div class="te-map">
-              <span class="te-target mono">${esc(o.name)}</span>
-              <span class="te-arrow">→</span>
-              <select data-te-out="${i}" style="flex:1">
-                <option value="" ${tgt.kind!=='REQUEST_DATA'?'selected':''}>don't store</option>
-                ${dataParams.map(p=>`<option value="${esc(p.name)}" ${tgt.path===p.name?'selected':''}>request.${esc(p.name)}</option>`).join('')}
-              </select>
-            </div>`;
-          }).join('')}
+          <span class="hint">The action's return values. The request type decides which of them
+            are kept, and on which request field — nothing is stored unless a use wires it.</span>
+          ${sigRows(d.outputs,'outputs')}
         </div>
-      </section>`:''}
+      </section>`:''}`:''}
 
       ${d.kind==='MANUAL'?`
       <section class="panel">
@@ -570,8 +517,8 @@ function teEditor(){
           <span class="pill neutral">${(d.resultParams||[]).length}</span></div>
         <div class="panel-body">
           <span class="hint">The form shown to the person carrying out the step — a subject and a
-            message, or just a comment. What they enter is the step's result, which the output
-            mappings below can store on the request.</span>
+            message, or just a comment. What they enter is what this task <b>produces</b>; the
+            request type decides where each answer is stored.</span>
           ${fieldRows(d.resultParams||[],'resultParams')}
           <button class="btn sm" data-te="add-field" data-f="resultParams">${I.plus} Add field</button>
           <div class="field" style="margin-top:4px">
@@ -582,27 +529,6 @@ function teEditor(){
           </div>
         </div>
       </section>`:''}
-
-      ${d.kind==='MANUAL'&&(d.resultParams||[]).length?`
-      <section class="panel">
-        <div class="panel-head"><h3>Output mappings</h3></div>
-        <div class="panel-body">
-          <span class="hint">Where the person's answers are stored on the request, so a later task
-            can use them. This is how a drafted message reaches the task that sends it.</span>
-          ${(d.resultParams||[]).map((p,i)=>{
-            const m = d.outputs[i]||{source:p.name,target:{kind:'NONE'}};
-            const tgt = m.target||{kind:'NONE'};
-            return `<div class="te-map">
-              <span class="te-target mono">${esc(p.name||'—')}</span>
-              <span class="te-arrow">→</span>
-              <select data-te-out="${i}" style="flex:1">
-                <option value="" ${tgt.kind!=='REQUEST_DATA'?'selected':''}>don't store</option>
-                ${dataParams.map(q=>`<option value="${esc(q.name)}" ${tgt.path===q.name?'selected':''}>request.${esc(q.name)}</option>`).join('')}
-              </select>
-            </div>`;
-          }).join('')}
-        </div>
-      </section>`:''}
     </div>
 
     <aside class="rail"><div id="te-preview">${previewHTML(d,issues)}</div></aside>
@@ -611,24 +537,19 @@ function teEditor(){
 
 function previewHTML(d, issues){
   issues = issues || defIssues(d);
-  const stored = (d.outputs||[]).filter(m=>m.target && m.target.kind==='REQUEST_DATA' && m.target.path);
   return `
   <section class="panel">
-    <div class="panel-head"><h3>Set by the designer</h3></div>
+    <div class="panel-head"><h3>The signature</h3></div>
     <div class="panel-body">
-      ${(()=>{
-        const all = d.params||[];
-        if(!all.length) return `<div style="font-size:12.5px;color:var(--ink-3)">No configuration — this task type needs no settings.</div>`;
-        return all.map(p=>`
-          <div class="field">
-            <label>${esc(p.label||p.name||'—')} ${p.required?'<span class="req">*</span>':''}</label>
-            ${p.type==='enum'
-              ? `<select disabled>${(p.values||[]).map(v=>`<option>${esc(v)}</option>`).join('')}</select>`
-              : `<input type="text" disabled placeholder="${esc(p.placeholder||'')}">`}
-          </div>`).join('')
-          + `<span class="hint">Valued in the request type — a flow step's defaults, or a
-              preconfigured activity. The requester never fills these in.</span>`;
-      })()}
+      <div class="te-call mono">${esc(renderCall(d))}</div>
+      ${taskInputs(d).length?`
+        <div style="font-size:12.5px;color:var(--ink-2)"><b>needs</b>
+          ${taskInputs(d).map(p=>`<span class="kv">${esc(p.label||p.name)}${p.required?' *':''}</span>`).join(' ')}</div>`:''}
+      ${taskOutputs(d).length?`
+        <div style="font-size:12.5px;color:var(--ink-2)"><b>produces</b>
+          ${taskOutputs(d).map(o=>`<span class="kv">${esc(o.label||o.name)}</span>`).join(' ')}</div>`:''}
+      <span class="hint">A pure function: no request in sight. Each request type wires it —
+        where inputs come from, which outputs are kept.</span>
     </div>
   </section>
 
@@ -647,29 +568,12 @@ function previewHTML(d, issues){
   </section>`:''}
 
   <section class="panel">
-    <div class="panel-head"><h3>What runs</h3></div>
-    <div class="panel-body">
-      <div class="te-call mono">${esc(renderCall(d))}</div>
-      <span class="hint">Generated from the bindings for you to read. Nothing parses it back.</span>
-    </div>
-  </section>
-
-  ${stored.length?`
-  <section class="panel">
-    <div class="panel-head"><h3>What it stores</h3></div>
-    <div class="panel-body">
-      ${stored.map(m=>`<div class="te-call mono">request.${esc(m.target.path)} ← ${esc(m.source)}</div>`).join('')}
-      <span class="hint">Written by the run, not by the requester.</span>
-    </div>
-  </section>`:''}
-
-  <section class="panel">
     <div class="panel-head"><h3>Ready?</h3>
       <span class="pill ${issues.length?'bad':'ok'}">${issues.length?`${issues.length} to fix`:'valid'}</span></div>
     <div class="panel-body">
       ${issues.length
         ? issues.map(x=>`<div class="grule fail"><span class="gi">${I.cross}</span><span class="gt">${esc(x)}</span></div>`).join('')
-        : `<div class="grule pass"><span class="gi">${I.check}</span><span class="gt">This task type can be added to a request.</span></div>`}
+        : `<div class="grule pass"><span class="gi">${I.check}</span><span class="gt">This task type can be used in a request type.</span></div>`}
     </div>
   </section>`;
 }
@@ -702,7 +606,7 @@ function dlgImport(){
       <p style="margin:0;color:var(--ink-3);font-size:13px">Paste a
         <span class="mono">task-definitions.json</span> document. It replaces the whole catalogue.</p>
       <textarea id="te-import" rows="16" class="mono" style="font-size:11.5px"
-        placeholder='{ "apiVersion": "aixboms.taskdefinition/v1", "definitions": [ … ] }'></textarea>
+        placeholder='{ "apiVersion": "${TD_API}", "definitions": [ … ] }'></textarea>
     </div>
     <div class="dfoot"><button class="btn" data-act="close">Cancel</button>
       <button class="btn primary" data-te="do-import">Import</button></div>
@@ -734,21 +638,25 @@ document.addEventListener('click', e=>{
       try{ doc = JSON.parse(ta.value); }
       catch(err){ toast('That is not valid JSON'); break; }
       if(!doc || !Array.isArray(doc.definitions)){ toast('Expected { definitions: [ … ] }'); break; }
+      const major = String(doc.apiVersion||'').split('/')[1]||'';
+      if(major !== TD_API.split('/')[1]){
+        toast(`apiVersion ${doc.apiVersion||'(missing)'} is not ${TD_API}; this build cannot read it`); break;
+      }
       TASK_DOC = doc; reloadDefs(); closeModal(); render(); toast('Catalogue replaced');
       break;
     }
     case 'kind':
       d.kind = btn.dataset.v;
-      syncBindings(d); render(); break;
+      syncSignature(d); render(); break;
     case 'add-field':{
       const f = btn.dataset.f;
       if(!d[f]) d[f]=[];
       d[f].push({name:'', label:'', type:'text', required:false});
-      syncBindings(d); render(); break;
+      render(); break;
     }
     case 'del-field':{
       d[btn.dataset.f].splice(+btn.dataset.i,1);
-      syncBindings(d); render(); break;
+      render(); break;
     }
   }
 });
@@ -760,7 +668,7 @@ document.addEventListener('change', e=>{
 
   if(el.dataset.teD!==undefined && el.dataset.teD){
     d[el.dataset.teD] = el.value;
-    if(el.dataset.teD==='action') syncBindings(d);
+    if(el.dataset.teD==='action') syncSignature(d);
     if(['action','icon'].includes(el.dataset.teD)){ render(); return; }
     paintPreview(); return;
   }
@@ -772,24 +680,11 @@ document.addEventListener('change', e=>{
     if(k==='required'){ p[k] = el.checked; render(); return; }
     if(k==='values') p.values = el.value.split(',').map(s=>s.trim()).filter(Boolean);
     else p[k] = el.value;
-    /* A renamed result field is a renamed output row — keep them in step. */
-    if(k==='type' || k==='name'){ syncBindings(d); render(); return; }
+    if(k==='type'){ render(); return; }
     paintPreview(); return;
   }
-  if(el.dataset.teMap!==undefined){
-    const b = d.inputs[+el.dataset.teMap];
-    if(el.dataset.k==='kind'){
-      b.source = el.value==='LITERAL' ? {kind:'LITERAL', value:''}
-               : el.value==='NONE'    ? {kind:'NONE'}
-               : {kind:el.value, path:''};
-      render(); return;
-    }
-    b.source[el.dataset.k] = el.value;
-    paintPreview(); return;
-  }
-  if(el.dataset.teOut!==undefined){
-    const m = d.outputs[+el.dataset.teOut];
-    m.target = el.value ? {kind:'REQUEST_DATA', path:el.value} : {kind:'NONE'};
+  if(el.dataset.teSig){
+    d[el.dataset.teSig][+el.dataset.i][el.dataset.k] = el.value;
     paintPreview(); return;
   }
 });
@@ -803,8 +698,8 @@ document.addEventListener('input', e=>{
     else p[k] = el.value;
     paintPreview(); return;
   }
-  if(el.dataset.teMap!==undefined && el.type==='text'){
-    d.inputs[+el.dataset.teMap].source[el.dataset.k] = el.value;
+  if(el.dataset.teSig && el.type==='text'){
+    d[el.dataset.teSig][+el.dataset.i][el.dataset.k] = el.value;
     paintPreview(); return;
   }
 });
