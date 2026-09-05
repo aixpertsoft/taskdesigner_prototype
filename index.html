@@ -59,11 +59,15 @@
 /* ============================ state ============================ */
 let S;
 
-/* One worked example: the notification a network operator has to send customers
+/* The worked example: the notification a network operator has to send customers
    before planned maintenance. A person drafts it, an administrator approves the
    exact wording (or the process loops back on their answer), a designed slot may
    hold an optional digital signature, and the server sends it and records what
-   the mail server answered. */
+   the mail server answered.
+
+   The inbox starts EMPTY: there is no pre-built demo request, so nothing on
+   screen can drift from the request type. "New task request" instantiates the
+   flow — the plan a requester gets IS the template, freshly copied. */
 
 /* Creating a request instantiates the request type's task flow. The step's rules
    are copied onto the task item, not referenced: a request is bound to the flow
@@ -98,49 +102,23 @@ function seed(){
      would return from GET /taskrequestdefs. Its taskFlow is the ordered template
      a new request is instantiated from. */
   const definition = currentRequestType();
-  const data = {};
-  definition.dataParameters.forEach(p=>{ data[p.name] = p.defaultValue; });
 
   return {
     me:'mb',
     /* 'runtime' is the end user's app; 'designer' the administrator's. */
     mode:'runtime',
     screen:'inbox',
-    /* "All open" rather than "Awaiting my approval": the one seeded request belongs
-       to the starting user, so an approval-filtered inbox would open empty. */
     inboxTab:'open',
     requestTab:'tasks',
     defSection:'flow',
     flowOpen:null,
-    openRequestId:'TR-2087',
+    openRequestId:null,
     tipOpen:false, tipSeen:false, gateOpen:false,
-    seq:6,
+    seq:0,
     definition,
-    requests:[
-      {
-        id:'TR-2087', name:'Notify customers — R12 uplink switch replacement',
-        requester:'mb',
-        createdAt:'03.09.2026 09:14', version:3,
-        data,
-        /* Instantiated from the flow, exactly as a new request would be — so the
-           seed cannot drift from the template it claims to come from. */
-        taskItems:instantiateFlow(definition, 0),
-        approvals:[
-          {id:'a1', user:'kw', decision:'APPROVED', at:'03.09.2026 09:41', hash:null},
-        ],
-        changeRequests:[],
-        comments:[
-          {id:'c1', user:'mb', text:'Uplink switch in R12 gets replaced in the September window. '
-            +'Customers on that switch have to be told a week in advance — this is the notification.',
-           at:'03.09.2026 09:14'},
-        ],
-        history:[
-          {at:'03.09.2026 09:14', who:'mb', text:'created this request from Maintenance Notification'},
-          {at:'03.09.2026 09:41', who:'kw', text:'approved this request'},
-        ],
-        logs:[], workItems:[], run:null,
-      },
-    ],
+    /* Empty on purpose: every request in the demo is raised through the same
+       "New task request" path a real user takes. */
+    requests:[],
   };
 }
 
@@ -197,11 +175,14 @@ function tipPanel(){
   return `<div class="tip" role="dialog" aria-label="What to try">
     <h3>Try this</h3>
     <ol>
-      <li>Open the request and press <b>Execute all tasks</b>. It runs step 1 and stops — a person
-        has to draft the notification.</li>
-      <li>You are <b>M. Browett</b> (NetOps), so it is yours. Press <b>Draft</b> and write the
-        notification. The process routes straight on and parks for an administrator.</li>
-      <li>Switch to <b>K. Weber</b> (top right). <i>Awaiting my action</i> shows 1. Tick
+      <li>Press <b>New task request</b> and give it a title — the whole process arrives already
+        instantiated from the request type.</li>
+      <li>The gate is red: an administrator has to approve before anything runs. Switch to
+        <b>K. Weber</b> (top right), open the request and press <b>Approve</b>.</li>
+      <li>Back as <b>M. Browett</b>, press <b>Execute all tasks</b>. It runs and stops — a person
+        has to draft the notification, and it is yours: press <b>Submit draft</b> and write it.
+        The process routes on and parks for an administrator.</li>
+      <li>As <b>K. Weber</b>, <i>Awaiting my action</i> shows 1. Tick
         <b>Approve the wording</b> and submit — the mail sends by itself.</li>
       <li>Or answer <b>no</b> with a reason: the process walks <i>back</i> to the draft. The
         transitions route on her answer — there is no decline button.</li>
@@ -239,6 +220,14 @@ document.addEventListener('click', e=>{
   const nav = e.target.closest('[data-nav]');
   if(nav){ S.screen = nav.dataset.nav; render(); return; }
 
+  const wiRow = e.target.closest('[data-wi]');
+  if(wiRow && !e.target.closest('[data-open]')){
+    S.openRequestId = wiRow.dataset.openReq;
+    const w = req().workItems.find(x=>x.id===wiRow.dataset.wi);
+    if(w && w.state==='OPEN'){ (w.kind==='BLOCKER' ? dlgBlocker : dlgSign)(w.id); }
+    else { S.screen='request'; S.requestTab='tasks'; render(); }
+    return;
+  }
   const openRow = e.target.closest('[data-open]');
   if(openRow){ S.openRequestId=openRow.dataset.open; S.screen='request'; S.requestTab='tasks'; render(); return; }
 
@@ -366,7 +355,7 @@ document.addEventListener('input', e=>{
 });
 document.addEventListener('keydown', e=>{
   if(e.key==='Escape'){ closeModal(); if(S.tipOpen){ S.tipOpen=false; render(); } }
-  const row=e.target.closest?.('[data-open]');
+  const row=e.target.closest?.('[data-open],[data-wi]');
   if(row && (e.key==='Enter'||e.key===' ')){ e.preventDefault(); row.click(); }
 });
 
@@ -425,12 +414,6 @@ function boot(){
     boot._wired = true;
   }
   S = seed();
-  (function fixSeedHashes(){
-    S.requests.forEach(r=>{
-      const h=taskConfigHash(r);
-      r.approvals.forEach(a=>{ if(a.hash===null) a.hash=h; });
-    });
-  })();
   render();
 }
 </script>

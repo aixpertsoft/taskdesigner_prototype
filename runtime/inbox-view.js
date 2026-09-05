@@ -70,9 +70,19 @@ function inboxRow(r){
   if(appr) bits.push(`${good} of ${appr.min} approvals`);
   if(openCr) bits.push(`${openCr} open change request${openCr===1?'':'s'}`);
   if(failed) bits.push(`${failed} failed execution${failed===1?'':'s'}`);
-  else if(parked) bits.push(mine?'waiting for your signature':'waiting for a signature');
+  else if(parked){
+    /* Name the step that is actually waiting — the flow decides what that is. */
+    const w = openWorkItems(r)[0];
+    bits.push(w ? (mine ? 'waiting for you — '+w.title : 'waiting — '+w.title) : 'waiting');
+  }
   else if(gate.canExecute) bits.push('ready to execute');
-  return `<div class="row" data-open="${r.id}" tabindex="0" role="button">
+  /* In the action tab the row opens the FORM directly — the fastest path to
+     acting. The request stays one click away via Show request. */
+  const myWi = myWorkItems(r,S.me)[0];
+  const direct = S.inboxTab==='action' && myWi;
+  return `<div class="row" ${direct
+      ? `data-wi="${myWi.id}" data-open-req="${r.id}" title="Open the form and act on it"`
+      : `data-open="${r.id}"`} tabindex="0" role="button">
     <div class="rmain">
       <div class="rtitle">
         ${mine?`<span class="pill warn">${I.pause} your turn</span>`:''}
@@ -83,7 +93,8 @@ function inboxRow(r){
       </div>
       <div class="rmeta">${bits.map((b,i)=>`${i?'<span class="dot">·</span>':''}<span>${esc(b)}</span>`).join('')}</div>
     </div>
-    <div class="rside">${esc(S.definition.name)}<br>${esc(USERS[r.requester].name)}</div>
+    <div class="rside">${esc(S.definition.name)}<br>${esc(USERS[r.requester].name)}${direct
+      ? `<br><button class="btn sm" data-open="${r.id}" style="margin-top:6px">Show request</button>` : ''}</div>
   </div>`;
 }
 

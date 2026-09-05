@@ -22,8 +22,9 @@ The prototype is plain HTML, CSS and JavaScript with no build step and no depend
 index.html
 ```
 
-Double-click it, or drag it into a browser. That is all it needs. `index.html` loads four sibling
-files from the same folder, so keep them together — but there is nothing to install or compile.
+Double-click it, or drag it into a browser. That is all it needs. `index.html` loads its scripts
+from the `shared/`, `runtime/`, `designer/` and `data/` folders next to it, so move the folder as a
+whole — but there is nothing to install or compile.
 
 **Or serve it** (only worth it if you want a shareable local URL):
 
@@ -41,7 +42,9 @@ back to Segoe UI and still works.
 ## Use it
 
 Everything runs in your browser. There is no server, nothing is saved, and reloading starts over —
-so click freely. The reset button (top right) restores the seeded state at any time.
+so click freely. The reset button (top right) empties everything back to the starting state. The
+inbox starts empty on purpose: every request in the demo is raised through **New task request**,
+so the plan you see is provably the template, freshly instantiated.
 
 ### The controls that matter
 
@@ -56,7 +59,7 @@ so click freely. The reset button (top right) restores the seeded state at any t
 
 | User | Roles | Can approve? |
 | --- | --- | --- |
-| **M. Browett** | NetOps | No — opened TR-2087, and you cannot approve your own request |
+| **M. Browett** | NetOps | No — raises the request in the demo, and you cannot approve your own request |
 | **A. Schmidt** | Administrator, NetOps | Yes |
 | **K. Weber** | Administrator | Yes |
 | **J. Novak** | Viewer | No — holds no approving role |
@@ -71,10 +74,12 @@ approved wording is wanted — proof that *what was approved* and *what was sent
 
 ### Three things worth trying
 
-**1. Run it.** Open `TR-2087` and press **Execute all tasks**. It stops immediately — step 1 needs a
-person. Press **Submit draft** and write the notification; the process routes straight to the
-approval. Switch to K. Weber, tick **Approve the wording**, and **Submit decision**. The mail sends
-by itself. Answer *no* instead and the process walks back to the draft — the flow's transitions
+**1. Run it.** The inbox starts empty. Press **New task request** — the whole process arrives
+already instantiated from the request type, and the gate is red: it wants an administrator's
+approval. Switch to K. Weber and press **Approve**, then back as M. Browett press
+**Execute all tasks**. It stops immediately — step 1 needs a person. Press **Submit draft** and
+write the notification; the process routes straight to the approval. As K. Weber, tick
+**Approve the wording**, and **Submit decision**. The mail sends by itself. Answer *no* instead and the process walks back to the draft — the flow's transitions
 route on her answer; there is no decline button and no continue button.
 
 **2. Watch the data fill in.** The **Data** tab has two fields you own and several marked *written

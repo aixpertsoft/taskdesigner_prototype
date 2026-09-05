@@ -13,7 +13,8 @@ contract is in [specification.md](specification.md).
 One worked case, chosen because every network operator already does it and nobody needs domain
 knowledge to follow it: **the notification you have to send customers before planned maintenance.**
 
-> *TR-2087 — Notify customers, R12 uplink switch replacement*
+> *Notify customers — R12 uplink switch replacement* (the request you raise in the demo — the
+> inbox deliberately starts empty, so the plan you get is provably the template, freshly copied)
 
 | # | Activity | Kind | Who or what |
 | --- | --- | --- | --- |
@@ -56,9 +57,12 @@ cause-and-effect between them stays demonstrable.
 
 ## The five-minute demo
 
-1. The inbox opens on **All open** with the one request. Click it.
-2. Press **Execute all tasks**. It runs for half a second and **stops** — step 1 needs a person. The
-   card turns amber: *Execution is parked here. Waiting for NetOps.*
+1. The inbox starts empty. Press **New task request** and give it a title — the whole process
+   arrives already instantiated from the request type. The gate is red: one administrator
+   approval is required before anything may run.
+2. Switch to **K. Weber** and press **Approve** in the Approvals rail. Back as **M. Browett**,
+   press **Execute all tasks**. It runs for half a second and **stops** — step 1 needs a person.
+   The card turns amber: *Execution is parked here. Waiting for NetOps.*
 3. You are M. Browett, so it is yours. Press **Submit draft**, fill in a subject, a message and
    recipients, and submit. The process routes straight on to the approval and parks again — this
    time for an **Administrator**.
@@ -86,8 +90,11 @@ its results.
 ### The inbox
 
 Five tabs — *Awaiting my action*, *Awaiting my approval*, *My requests*, *All open*, *Everything*.
-The two leading tabs answer the two forms of "what needs me?": something needs your **signature**,
-or something needs your **approval**. The original requirements document specified two editors and
+The two leading tabs answer the two forms of "what needs me?": something needs your **action** — a
+draft to write, a decision to give, a blocker to clear — or something needs your **approval**.
+*Awaiting my action* is a worklist: opening a row opens the **form itself**, ready to act on, with
+the context the designer declared — not the request. A **Show request** button on the row is the
+way in when you do want the whole picture. The original requirements document specified two editors and
 no list view; an approval tool without an inbox is not a daily tool.
 
 ### The request

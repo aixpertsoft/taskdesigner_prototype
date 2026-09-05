@@ -312,7 +312,7 @@ function gateBox(r,gate){
      and no run at all — where the gate decides whether one may start. */
   const head = waiting
     ? `<span class="gi pausing">${I.pause}</span>
-       <span>Waiting for a signature <span class="gsub">— ${esc(eligibleFor(waiting).map(u=>USERS[u].name).join(' or '))}${
+       <span>${esc(waiting.kind==='BLOCKER' ? 'Blocked — '+waiting.title : 'Waiting — '+waiting.title)} <span class="gsub">— ${esc(eligibleFor(waiting).map(u=>USERS[u].name).join(' or '))}${
          waiting.dueAt?`, due ${esc(waiting.dueAt)}`:''}</span></span>`
     : allDone
     ? `<span class="gi">${I.check}</span><span>All tasks completed <span class="gsub">— nothing left to run</span></span>`
