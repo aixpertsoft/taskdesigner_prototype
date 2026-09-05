@@ -99,7 +99,7 @@ immediately: configuration, not code.
 
 **Real** — the rules engine, the approval quorum, role checks, the stale-approval dismissal, the
 execution gate, and the run state machine — a single token walking a routed graph, parking on
-manual steps, looping back when an approval answers no. A request's status is derived from that machine — open until the work is done — rather than
+manual steps, looping back when an approval answers no. A request's status is derived from that machine — open, running while a run is in flight, completed when the walk reaches an end — rather than
 being a second, hand-driven state machine beside it. These are the logic described in
 [the specification](docs/specification.md), so the Execute button is genuinely blocked rather than
 merely drawn greyed out.

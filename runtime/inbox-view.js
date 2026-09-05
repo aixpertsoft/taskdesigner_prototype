@@ -25,7 +25,7 @@ function inboxFilter(){
     });
   }
   if(S.inboxTab==='mine')   return S.requests.filter(r=>r.requester===m);
-  if(S.inboxTab==='open')   return S.requests.filter(r=>requestStatus(r)==='OPEN');
+  if(S.inboxTab==='open')   return S.requests.filter(r=>requestStatus(r)!=='COMPLETED');
   return S.requests;
 }
 function viewInbox(){
@@ -35,7 +35,7 @@ function viewInbox(){
     awaiting: (()=>{const t=S.inboxTab; S.inboxTab='awaiting'; const n=inboxFilter().length; S.inboxTab=t; return n;})(),
     action:   S.requests.reduce((n,r)=>n+myWorkItems(r,S.me).length,0),
     mine:     S.requests.filter(r=>r.requester===S.me).length,
-    open:     S.requests.filter(r=>requestStatus(r)==='OPEN').length,
+    open:     S.requests.filter(r=>requestStatus(r)!=='COMPLETED').length,
   };
   const list = inboxFilter();
   return `

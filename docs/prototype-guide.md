@@ -335,8 +335,11 @@ approvals cover, so a blocker collects its values through the work item instead.
 
 ### The rest of the screen
 
-**No status workflow.** A request's status is *derived*: open until every step has succeeded or been
-skipped, then completed — at which point authoring locks and approvals close. The original design had
+**No status workflow.** A request's status is *derived*: **open** until Execute starts a run,
+**running** for the whole in-flight life — the engine working *and* parked on a person, which is
+most of it — and **completed** once the walk reaches an end, at which point authoring locks and
+approvals close. A failed or cancelled run falls back to *open*: the request needs attention again.
+The original design had
 a second, user-driven state machine (OPEN → APPROVED → COMPLETED…), which competed with the run for
 the same words: APPROVED-the-status against the approvals rule, COMPLETED-the-status against the
 run's own completed. One lifecycle is enough. The platform's role-gated status workflow

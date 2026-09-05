@@ -51,12 +51,17 @@ const USER_ORDER = ['mb','as','kw','jn'];
    original design had a second, user-driven state machine next to the run's —
    with APPROVED-the-status competing with the approvals rule for the same word.
    One lifecycle is enough: open until the work is done. */
-const STATUS_TONE = {OPEN:'blue', COMPLETED:'ok'};
+const STATUS_TONE = {OPEN:'blue', RUNNING:'warn', COMPLETED:'ok'};
 function requestStatus(r){
   /* Derived from the run, not from the items: with conditional routing, the
      activities on an untaken branch legitimately stay NOT_RUN, so "every task
-     succeeded" stopped being the test. Done = the walk reached an end. */
-  return r.run && r.run.state==='COMPLETED' ? 'COMPLETED' : 'OPEN';
+     succeeded" stopped being the test. Done = the walk reached an end.
+     RUNNING covers the whole in-flight life — working AND parked on a person,
+     which is most of it. A failed or cancelled run falls back to OPEN: the
+     request needs attention again, and Execute can resume or restart it. */
+  if(r.run && r.run.state==='COMPLETED') return 'COMPLETED';
+  if(runInFlight(r)) return 'RUNNING';
+  return 'OPEN';
 }
 
 /* ============================ helpers ============================ */

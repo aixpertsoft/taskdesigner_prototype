@@ -290,6 +290,7 @@ function panelApprovals(r,gate){
                </div>`)
         : `<div class="hint" style="font-size:11.5px;color:var(--ink-3)">
              ${isRequester?'You opened this request, so you cannot approve it.'
+               : requestStatus(r)==='RUNNING' ? 'Approvals are closed while a run is in progress — the plan is frozen.'
                : requestStatus(r)!=='OPEN' ? 'Approvals are closed — the work is done.'
                : `${esc(me().name)} does not hold a role that may approve this request type.`}
            </div>`}
