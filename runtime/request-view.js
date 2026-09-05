@@ -244,8 +244,8 @@ function gateBox(r){
   /* The run-state bar. There is deliberately no approval gate any more: WHO
      may execute is a user-permission question in the real system, and
      approval, where a process needs one, is an activity inside the flow. What
-     still stops a run is the process itself — preconditions, manual steps,
-     required inputs. */
+     still stops a run is the process itself — manual steps, and required
+     inputs that resolve to nothing. */
   const head = waiting
     ? `<span class="gi pausing">${I.pause}</span>
        <span>${esc(waiting.kind==='BLOCKER' ? 'Blocked — '+waiting.title : 'Waiting — '+waiting.title)} <span class="gsub">— ${esc(eligibleFor(waiting).map(u=>USERS[u].name).join(' or '))}${

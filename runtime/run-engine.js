@@ -83,7 +83,7 @@ async function runOneTask(r,t,actor){
   return true;
 }
 
-/* What the completion dialog shows the person: the request-data fields the
+/* The "From the request" box on the step's work-item form: the request-data fields the
    activity DECLARES it wants shown (runtimeConfig.display), with their current
    values. Empty fields are omitted — so the draft step can list approvalNote
    and it only appears on a redo, carrying the approver's reason. Nothing is
@@ -106,8 +106,8 @@ function itemLabel(t){
 function startRun(){
   const r=req();
   /* No approval gate: WHO may execute is a user-permission question in the
-     real system. What still stops a run is the process itself — preconditions,
-     manual steps, required inputs. */
+     real system. What still stops a run is the process itself — manual steps,
+     and required inputs that resolve to nothing. */
   if(runInFlight(r)){ toast('A run is already in progress'); return; }
   if(!r.taskItems.length){ toast('This request has no tasks to run'); return; }
 
@@ -176,23 +176,16 @@ async function driveRun(r){
 
     const d = TASK_DEFS[t.def];
 
-    /* Precondition: unlike a gate rule, this cannot be checked before the run
-       starts, because the value it needs may be produced by an earlier step.
-       Two sources feed it: the step's declared `requires` rules, and — with no
-       configuration at all — any REQUIRED input of the action that resolves to
-       nothing. The action's own contract says what it cannot run without. */
-    const unmetRules = (t.requires||[]).map(rule=>evaluateRule(rule,r)).filter(x=>!x.satisfied);
+    /* The one precondition left, and it needs no configuration: the action's
+       own contract. A REQUIRED input that resolves to nothing parks the run on
+       a blocker — checked here, at run time, because the value may be produced
+       by an earlier step. */
     const missing = d.manual ? [] : missingInputs(d,t,r);
-    if(unmetRules.length || missing.length){
-      const unmet = [
-        ...unmetRules.map(x=>({label:x.label, reason:x.reason})),
-        ...missing.map(m=>({label:`Required input "${m.target}" has no value`,
-                            reason:describeSource(m.source)})),
-      ];
-      const needs = [...new Set([
-        ...(t.requires||[]).filter(rule=>!evaluateRule(rule,r).satisfied).map(rule=>rule.path),
-        ...missing.filter(m=>m.source&&m.source.kind==='REQUEST_DATA').map(m=>m.source.path),
-      ])];
+    if(missing.length){
+      const unmet = missing.map(m=>({label:`Required input "${m.target}" has no value`,
+                            reason:describeSource(m.source)}));
+      const needs = [...new Set(
+        missing.filter(m=>m.source&&m.source.kind==='REQUEST_DATA').map(m=>m.source.path))];
       const w = {id:'wi'+(++S.seq), runId:run.id, taskItemId:t.id, kind:'BLOCKER',
         title:`${d.label} cannot start`, roles:['Administrator','NetOps'],
         dueAt:null, state:'OPEN', createdAt:stamp(),
@@ -250,18 +243,15 @@ async function driveRun(r){
 /* Resolving a blocker: the missing values are supplied through the work item, not
    by editing the Data tab. They are execution-written, so the frozen plan itself
    is untouched — and the audit trail records who supplied them. If nothing
-   satisfies the rule, the run stays parked. */
+   satisfies the contract, the run stays parked. */
 async function resolveBlocker(id, values){
   const r=req();
   const w=r.workItems.find(x=>x.id===id); if(!w||w.state!=='OPEN') return;
   const t=r.taskItems.find(x=>x.id===w.taskItemId);
   Object.entries(values).forEach(([k,v])=>{ if(v!=='') r.data[k]=v; });
   const tdef = TASK_DEFS[t.def];
-  const still = [
-    ...(t.requires||[]).map(rule=>evaluateRule(rule,r)).filter(x=>!x.satisfied),
-    ...(tdef.manual?[]:missingInputs(tdef,t,r).map(m=>
-        ({label:`required input "${m.target}" still has no value`}))),
-  ];
+  const still = tdef.manual ? [] : missingInputs(tdef,t,r).map(m=>
+    ({label:`required input "${m.target}" still has no value`}));
   if(still.length){
     render(); toast(`Still blocked — ${still[0].label}`); return;
   }
@@ -312,7 +302,7 @@ function fillSlot(r, slotId, activityId){
   if(!slot || slot.kind!=='PLACEHOLDER') return null;
   /* Only a PRECONFIGURED activity from the slot's own menu — never a raw task
      type. The designer configured it like a flow step, so it arrives complete:
-     wiring, assignment, display, preconditions. */
+     wiring, assignment, display. */
   const act = (slot.possibleActivities||[]).find(a=>a.id===activityId);
   if(!act) return null;
   const defName = act.taskDefinition;
@@ -331,7 +321,6 @@ function fillSlot(r, slotId, activityId){
     assignedRoles:JSON.parse(JSON.stringify(arc.assignedRoles||[])),
     dueBy:arc.dueBy||null,
     display:JSON.parse(JSON.stringify(arc.display||[])),
-    requires:JSON.parse(JSON.stringify(arc.requires||[])),
     transitions: JSON.parse(JSON.stringify(inheritFrom.transitions||[])),
   };
   if(prev){

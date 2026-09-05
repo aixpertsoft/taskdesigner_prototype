@@ -135,11 +135,12 @@ rules — an approval quorum, no open change requests. Both were removed on purp
 execute* is a **user-permission** question, deferred to the platform's permissions; *whether
 something is approved* is an **activity inside the flow** — the demo's approval step, which sees
 the actual content and routes on its answer. What still stops a run is the process itself:
-preconditions, manual steps, and required inputs, each named when it happens — and enforced by the
-engine, not by a disabled button, because anyone able to call the API bypasses a UI-only control.
+manual steps, and required inputs that resolve to nothing, each named when it happens — and
+enforced by the engine, not by a disabled button, because anyone able to call the API bypasses a
+UI-only control.
 
 **And there is deliberately no way to run one task by hand.** Execution happens only through a run,
-which walks the flow in order, honours skips and preconditions, and validates each action's required
+which walks the flow along its transitions and validates each action's required
 inputs. Retrying a failed step is simply *Execute all* again — a new run skips what already
 succeeded and picks up where it failed.
 
@@ -265,8 +266,7 @@ requester or editable by them, and none of it appears on the task form:
 | --- | --- |
 | **Who may carry it out** | The candidate roles for a manual step — anyone holding one of them sees it in *Awaiting my action* and may close it. Empty falls back to Administrator, so no step can park where nobody may ever act. |
 | **Due by** | Shown on the work item while the step waits. |
-| **Do not start until** | Checked at run time. If unsatisfied the run parks on a **blocker** until somebody supplies what is missing. |
-| **Shown to the person** | Which request fields the completion dialog displays — each activity shows only what its person needs. Empty fields are omitted, so the draft step lists the approver's comment and it appears only on a redo, carrying the reason. Presentation only; deliberately outside the approval hash. |
+| **Shown to the person** | Which request fields appear in the *"From the request"* box of the form the person fills in — each step shows only what its person needs. Empty fields are omitted, so the draft step lists the approver's comment and it appears only on a redo, carrying the reason. Presentation only. |
 | **Transitions** | The outgoing edges: evaluated in order once the activity completes, first match wins, *always* is the otherwise. A condition is one field compared to one value — `approved = false` back to the draft. |
 
 Assignment used to be an ordinary form field the engine recognised by name — which meant the
@@ -291,29 +291,23 @@ conditional edge `skipApproval = true` straight past the approval, which is simp
 There is no separate skip mechanism — it is one transition among the others, visible in the graph
 picture.
 
-### Try the blocker
+### The blocker
 
-In the designer, give *Send notification* a precondition: **do not start until the fingerprint is
-set**. Execute without filling the slot: the run reaches the send, finds the precondition unmet,
-and **parks on a blocker** — the same pause as a manual step, in the same inbox. Designer cause,
-runtime effect. Fill the slot with a signature instead, and the precondition passes on its own.
+A server step will not dispatch while a **required input resolves to nothing** — and this needs no
+configuration at all. The action registry declares which parameters are required, so the engine
+checks what the wiring can actually deliver, at run time, because the value may be produced by an
+earlier step. A run reaching *Send notification* with nothing drafted **parks on a blocker** — the
+same pause as a manual step, in the same inbox — naming each unproduced input and where it was
+supposed to come from: *"body" has no value: request.notificationBody is written by an earlier
+step that has not run yet.* The action's own contract does the work; nobody has to remember to
+configure it.
 
-**Why this cannot be a gate rule:** the fingerprint does not exist until the signing task has run.
-Preconditions are the rules that can only be judged once the run is under way.
-
-**And even with no rule configured at all**, a server step cannot run before its inputs exist. The
-action registry declares which parameters are required, so the engine checks what the bindings can
-actually deliver: a run reaching *Send notification* with nothing drafted parks on a blocker naming
-each unproduced input and where it was supposed to come from — *"body" has no value:
-request.notificationBody is written by an earlier step that has not run yet.* The same check guards
-the per-task run button: trying to sign before drafting, or send before anything, is refused by
-name instead of "succeeding" against empty values. The action's own contract does the work; nobody
-has to remember to configure it.
-
-Press **Supply & continue** and provide the value. Note what the dialog says: what you supply is
-recorded as execution output, attributed to you, so it does **not** disturb the approvals already
-given. That is also why the Data tab is frozen during a run — the requester's own fields are what the
-approvals cover, so a blocker collects its values through the work item instead.
+**To see one:** in the designer, rewire the send's *Message* to a field nothing fills — say the
+approver's comment — and execute with *Skip the approval step* ticked. The run reaches the send and
+parks, naming exactly that field. Press **Supply & continue** and provide the value: it is
+recorded as execution output, attributed to you, on the audit trail — and the run resumes on its
+own. (There used to be a configurable *do not start until…* precondition on top of this; it was
+removed — the automatic contract check covers the case people actually hit.)
 
 ### The rest of the screen
 
@@ -337,21 +331,18 @@ value: tasks may refine it later, and their forms arrive prefilled with what is 
 the demo's subject is demanded at creation yet still editable in the draft step. The list is fully
 editable — label, type, owner and default
 inline, new fields via *Add parameter*. Deleting a field is refused while anything still references
-it by name — a task binding, a step's skip or precondition rule — with the references listed, since
+it by name — a wiring binding, a transition, a display list — with the references listed, since
 a silent delete would break those bindings without a trace. Names themselves are fixed once created,
 for the same reason.
 
-**There are no execution rules any more.** Earlier iterations gated the whole run behind
-pre-execution rules — an approval quorum, no open change requests. Both were removed on purpose:
-*who may execute* is deferred to the platform's **user permissions**, and approval became what it
-always wanted to be — an **activity in the flow**, content-aware and routed on its answer. The
-rules that remain are a step's **preconditions**, on the Task flow, because they can only be
-judged once the run is under way.
-
-**Why those rules are structured, not code:** the original document proposed "boolean typescript
-expressions". Both examples it named are structured predicates, and free-text JS contradicts a
-written decision already taken in this codebase. See [the rules section](specification.md#rules).
-There is no second rule engine.
+**There are no rules any more — at all.** Earlier iterations gated the whole run behind
+pre-execution rules (an approval quorum, no open change requests) and let a step declare *do not
+start until…* preconditions. All of it was removed on purpose: *who may execute* is deferred to
+the platform's **user permissions**, approval became an **activity in the flow** — content-aware,
+routed on its answer — and the only run-time pause left needs no configuration: a required input
+that resolves to nothing parks the run, by the action's own contract. The original document's
+"boolean typescript expressions" never happened; what conditions remain (transitions) are
+structured records, never code.
 
 ### It is all JSON
 
@@ -391,7 +382,7 @@ their model, and `index.html` is only a consumer:
 
 | File | Owns |
 | --- | --- |
-| `shared/core.js` | icons, demo users, helpers, and the **rule engine** — the part worth porting |
+| `shared/core.js` | icons, demo users, helpers, and the derived request status |
 | `runtime/run-engine.js` | execution and every mutation — the `drive()` loop as a statement of intent |
 | `runtime/inbox-view.js` / `request-view.js` / `dialogs.js` | the runtime screens and modals |
 | `data/task-definitions.json.js` | the task catalogue, as data |

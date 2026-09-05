@@ -3,7 +3,7 @@
 
    Two halves, deliberately split: the DATA WIRING (the step as a call site
    for its task type — where each input comes from, where each output is
-   kept) and the RUNTIME CONFIGURATION (assignment, display, preconditions,
+   kept) and the RUNTIME CONFIGURATION (assignment, display,
    transitions — how the engine behaves here). A placeholder step edits its
    preconfigured activities instead, each wired exactly like a step.
 
@@ -26,7 +26,6 @@ function rc(step){
   if(!c.assignedRoles)  c.assignedRoles = [];
   if(!('dueBy' in c))   c.dueBy = null;
   if(!c.display)        c.display = [];
-  if(!c.requires)       c.requires = [];
   if(!c.transitions)    c.transitions = [];
   if(step.kind==='PLACEHOLDER'){ if(!step.possibleActivities) step.possibleActivities = []; }
   else{
@@ -64,7 +63,6 @@ function flowStep(step,i){
             : m.manual?`<span class="pill neutral">manual</span>`:`<span class="pill blue">server</span>`}
           ${step.start?`<span class="pill ok">● start</span>`:''}
           ${step.end?`<span class="pill ok">end ◉</span>`:''}
-          ${(rc(step).requires||[]).length?`<span class="pill warn">has a precondition</span>`:''}
         </div>
         <div class="flowsub">${esc(
           (m.manual ? `carried out by ${(rc(step).assignedRoles.length?rc(step).assignedRoles:['Administrator']).join(' or ')}`
@@ -165,9 +163,10 @@ function flowStep(step,i){
         Nobody selected — the engine falls back to Administrator.</span>`}
 
       <h5>Shown to the person</h5>
-      <span class="hint">Which request fields the completion dialog displays, so each activity shows
-        only what its person needs. Fields with no value yet are omitted — list the approver's
-        comment on the draft step and it appears only on a redo, carrying the reason.</span>
+      <span class="hint">Which request fields appear in the <b>"From the request"</b> box of the
+        form the person fills in when they carry out this step — so each step shows only what its
+        person needs. Fields with no value yet are omitted: list the approver's comment on the
+        draft step and it appears only on a redo, carrying the reason.</span>
       <div class="rolepick">
         ${S.definition.dataParameters.map(p=>`
           <label class="rolechip ${rc(step).display.includes(p.name)?'on':''}">
@@ -181,12 +180,6 @@ function flowStep(step,i){
         <input type="text" data-rt="dueby" data-i="${i}" value="${esc(rc(step).dueBy||'')}"
           placeholder="12.09.2026">
       </div>`:''}
-
-      ${m.placeholder?'':`
-      <h5>Do not start until…</h5>
-      <span class="hint">Checked at run time, because the value may be produced by an earlier step.
-        If it is not satisfied the run parks on a blocker until somebody supplies it.</span>
-      ${ruleRows(rc(step),'requires',i,dataParams,'No precondition.')}`}
 
       <h5>Transitions — where the process goes next</h5>
       <span class="hint">Evaluated in order once this activity completes; the first match wins.
@@ -299,28 +292,6 @@ function wiringSummary(def, holder){
   return bits.length ? bits.join(' · ') : 'not wired yet';
 }
 
-/* Precondition rules are TaskRule[] of kind 'data' — the same shape the gate uses. */
-function ruleRows(runtime,which,i,dataParams,emptyText){
-  const list = runtime[which]||[];
-  return `
-    ${list.length? list.map((rule,j)=>`
-      <div class="te-map">
-        <span class="te-target">request data</span>
-        <select data-rt="rule-path" data-i="${i}" data-w="${which}" data-j="${j}" style="flex:1">
-          ${dataParams.map(p=>`<option value="${esc(p.name)}" ${rule.path===p.name?'selected':''}>${esc(p.label)} (${esc(p.name)})</option>`).join('')}
-        </select>
-        <span class="te-arrow">is</span>
-        <select data-rt="rule-op" data-i="${i}" data-w="${which}" data-j="${j}" style="width:auto">
-          <option value="truthy" ${rule.op==='truthy'?'selected':''}>set / true</option>
-          <option value="falsy"  ${rule.op==='falsy' ?'selected':''}>empty / false</option>
-        </select>
-        <button class="btn sm ico" data-rt="del-rule" data-i="${i}" data-w="${which}" data-j="${j}"
-          title="Remove">${I.trash}</button>
-      </div>`).join('')
-      : `<div style="font-size:12.5px;color:var(--ink-3);padding:4px 0">${esc(emptyText)}</div>`}
-    <button class="btn sm" data-rt="add-rule" data-i="${i}" data-w="${which}"
-      style="margin-top:6px">${I.plus} Add condition</button>`;
-}
 
 
 /* ============================ styles ============================ */

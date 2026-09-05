@@ -93,7 +93,6 @@ function instantiateFlow(definition, seqBase){
     assignedRoles:copy((step.runtimeConfig||{}).assignedRoles||[]),
     dueBy:(step.runtimeConfig||{}).dueBy || null,
     display:copy((step.runtimeConfig||{}).display||[]),
-    requires:copy((step.runtimeConfig||{}).requires||[]),
     transitions:copy((step.runtimeConfig||{}).transitions||[]),
   }));
 }
@@ -380,7 +379,7 @@ document.addEventListener('keydown', e=>{
    since the sibling may be exactly what is missing. */
 function missingParts(){
   return [
-    ['shared/core.js',                   typeof evaluateRule  === 'function'],
+    ['shared/core.js',                   typeof requestStatus === 'function'],
     ['runtime/inbox-view.js',            typeof viewInbox     === 'function'],
     ['runtime/request-view.js',          typeof viewRequest   === 'function'],
     ['runtime/dialogs.js',               typeof dlgSign       === 'function'],

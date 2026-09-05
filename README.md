@@ -99,7 +99,7 @@ produces, and which server action implements it. How values flow between them is
 
 ### What is real and what is not
 
-**Real** — the rule engine behind step preconditions, role checks, and the run state machine — a
+**Real** — role checks, the input-contract blockers, and the run state machine — a
 single token walking a routed graph, parking on manual steps, looping back when an approval step
 answers no. A request's status is derived from that machine — open, running while a run is in flight, completed when the walk reaches an end — rather than
 being a second, hand-driven state machine beside it. These are the logic described in
@@ -116,9 +116,8 @@ step and resumes by itself, but everything happens inside one browser tab.
 
 Control lives on the server, not in a button's `disabled` attribute — the original requirements
 document gated execution in the UI only, which is no control at all, because anyone able to call
-the API bypasses it. The prototype's engine applies that principle to what remains: a run parks on
-unmet preconditions and refuses to dispatch an action whose required inputs are missing, each with
-the reason named. Pre-execution *authorisation* is deliberately deferred to the platform's user
+the API bypasses it. The prototype's engine applies that principle to what remains: a run refuses
+to dispatch an action whose required inputs resolve to nothing, parking with the reason named. Pre-execution *authorisation* is deliberately deferred to the platform's user
 permissions — and when it arrives, the same rule applies: enforce it at `POST /execute`, never
 only in the UI.
 
@@ -140,7 +139,7 @@ only in the UI.
 index.html                            the shell: markup, seed data, render(), event wiring, boot
 shared/
   app.css                             base styles
-  core.js                             icons, demo users, helpers, and the RULE ENGINE
+  core.js                             icons, demo users, helpers, derived request status
 runtime/                              the end user's application
   inbox-view.js                       the landing screen
   request-view.js                     the request screen: cards, panes, execution bar
@@ -165,7 +164,7 @@ docs/prototype-guide.md               screen-by-screen walkthrough
 
 Hand-written HTML, CSS and vanilla JavaScript, one folder per key responsibility and one file per
 UI element. The two `data/*.json.js` files hold **data and no logic**; `shared/core.js` carries the
-rule engine (`evaluateRule` — the part worth porting); `run-engine.js` carries
+derived request status; `run-engine.js` carries
 execution and every mutation; each screen and the
 dialogs render from their own file; each editor owns its model and screen. `index.html` is only the
 shell: markup, `seed()`, `render()`, the delegated event handlers (dispatching on `data-act`; each

@@ -25,8 +25,6 @@ function dataParamUses(name){
     (st.possibleActivities||[]).forEach(a=>
       scanWiring(a, `activity "${a.label||a.taskDefinition}"`));
     const c=st.runtimeConfig||{};
-    (c.requires||[]).forEach(rule=>{ if(rule.path===name)
-      uses.push(`a precondition on "${stepMeta(st).label}"`); });
     (c.transitions||[]).forEach(tr=>{ if(tr.when && tr.when.path===name)
       uses.push(`a transition on "${stepMeta(st).label}"`); });
     (c.display||[]).forEach(n=>{ if(n===name)

@@ -38,7 +38,7 @@
                        Empty = pass-through.
        possibleActivities[]  the slot's menu: {id, label, taskDefinition,
                        inputBindings, outputBindings, runtimeConfig:{
-                       assignedRoles, dueBy, display, requires}}.
+                       assignedRoles, dueBy, display}}.
        start / end     exactly one activity is the start; one or more are ends.
                        A completed end with no matching transition completes
                        the run.
@@ -66,11 +66,8 @@
          assignedRoles   who may carry out a manual step — anyone holding one
                          of these roles. Empty falls back to Administrator.
          dueBy           when the step is due, shown on the work item
-         requires        TaskRule[] — if not satisfied, the run parks on a
-                         blocker. These cannot be executionRules: the value may
-                         be produced by an earlier activity.
-         display         which request-data fields the completion dialog shows
-                         the person, by name. Empty-valued fields are omitted,
+         display         which request-data fields the step's work-item form
+                         shows the person (its "From the request" box), by name. Empty-valued fields are omitted,
                          so the draft can list approvalNote and show it only on
                          a redo after a rejection. Presentation only — it is
                          deliberately NOT part of the approval hash.
@@ -96,8 +93,11 @@
        and output storage became outputBindings; v5 removed executionRules and
        the pre-execution approval gate — WHO may execute is deferred to user
        permissions, and approval, where a process needs one, is an ACTIVITY in
-       the flow (see approveNotification). Older documents are refused rather
-       than half-read.
+       the flow (see approveNotification); v6 removed a step's `requires`
+       preconditions — the only run-time pause rule left is the one that needs
+       no configuration: a required input that resolves to nothing parks the
+       run on a blocker, by the action's own contract. Older documents are
+       refused rather than half-read.
      - Everything is a named key; references are by name, never by index.
      - Every union carries an explicit discriminator: rules have `kind`,
        parameters have `owner` and `type`, bindings have `kind`, placeholder
@@ -105,7 +105,7 @@
      - Unknown fields are preserved across an import/export round-trip.
    =========================================================================== */
 window.REQUEST_TYPES = {
-  "apiVersion": "aixboms.requesttype/v5",
+  "apiVersion": "aixboms.requesttype/v6",
   "requestTypes": [
     {
       "id": "maintenance-notification",
@@ -156,7 +156,6 @@ window.REQUEST_TYPES = {
             "assignedRoles": ["NetOps"],
             "dueBy": "11.09.2026",
             "display": ["approvalNote"],
-            "requires": [],
             "transitions": [
               {"when": {"path": "skipApproval", "equals": true}, "to": "p1"},
               {"when": null, "to": "s3"}
@@ -177,7 +176,6 @@ window.REQUEST_TYPES = {
             "assignedRoles": ["Administrator"],
             "dueBy": "12.09.2026",
             "display": ["notificationSubject", "notificationBody", "recipients"],
-            "requires": [],
             "transitions": [
               {"when": {"path": "approved", "equals": false}, "to": "s1"},
               {"when": null, "to": "p1"}
@@ -201,7 +199,7 @@ window.REQUEST_TYPES = {
                 "sha256":   {"kind": "REQUEST_DATA", "path": "sha256"},
                 "signedAt": {"kind": "REQUEST_DATA", "path": "signedAt"}
               },
-              "runtimeConfig": {"assignedRoles": [], "dueBy": null, "display": [], "requires": []}
+              "runtimeConfig": {"assignedRoles": [], "dueBy": null, "display": []}
             },
             {
               "id": "a2",
@@ -213,7 +211,7 @@ window.REQUEST_TYPES = {
                 "note":     {"kind": "REQUEST_DATA", "path": "approvalNote"}
               },
               "runtimeConfig": {"assignedRoles": ["Administrator"], "dueBy": null,
-                "display": ["notificationSubject", "notificationBody", "recipients"], "requires": []}
+                "display": ["notificationSubject", "notificationBody", "recipients"]}
             }
           ],
           "start": false,
@@ -222,7 +220,6 @@ window.REQUEST_TYPES = {
             "assignedRoles": [],
             "dueBy": null,
             "display": [],
-            "requires": [],
             "transitions": [
               {"when": null, "to": "s4"}
             ]
@@ -248,7 +245,6 @@ window.REQUEST_TYPES = {
             "assignedRoles": [],
             "dueBy": null,
             "display": [],
-            "requires": [],
             "transitions": []
           }
         }

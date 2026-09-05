@@ -26,7 +26,7 @@
 /* ============================ the document ============================ */
 /* request-types.json.js is the source. Everything the editor changes is changed
    in this object, so Export hands back exactly what the server would store. */
-const RT_API = 'aixboms.requesttype/v5';
+const RT_API = 'aixboms.requesttype/v6';
 let REQUEST_TYPE_DOC = window.REQUEST_TYPES || {apiVersion:RT_API, requestTypes:[]};
 
 /* Refuse an unknown major rather than guessing at it — a file from a newer

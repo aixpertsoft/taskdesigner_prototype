@@ -1,8 +1,10 @@
 /* ===========================================================================
-   Core — icons, demo users, helpers, and the RULE ENGINE.
+   Core — icons, demo users, helpers, and the derived request status.
 
-   evaluateRule mirrors the specification and is the part worth
-   porting; see docs/prototype-guide.md, Porting notes.
+   There is deliberately no rule engine any more: the gate rules left with the
+   pre-execution approval gate, and step preconditions followed — the only
+   run-time pause left is the action's own contract (a required input that
+   resolves to nothing parks the run), which needs no rules to express.
 
    Part of the split prototype: classic scripts sharing one global scope, so
    this file may call anything its siblings declare — resolution happens at
@@ -97,23 +99,4 @@ function toast(msg){
   clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove('on'),2100);
 }
 
-/* ============================ rule engine ============================ */
-/* Mirrors evaluateRule() from the specification, reasons included. One kind
-   remains in use — the structured data check that step preconditions
-   ("do not start until…") are made of. There is deliberately no pre-execution
-   approval gate any more: WHO may execute becomes a user-permission question
-   in the real system, and approval, where a process needs one, is an activity
-   in the flow. No expression language, as everywhere else. */
-function evaluateRule(rule,r){
-  switch(rule.kind){
-    case 'data':{
-      const v = r.data[rule.path];
-      const param = S.definition.dataParameters.find(p=>p.name===rule.path);
-      const ok = rule.op==='truthy' ? !!v : v===rule.value;
-      return {label:`${param?param.label:rule.path} must be set`, satisfied:ok,
-              reason: ok?'confirmed':'not confirmed yet'};
-    }
-    default: return {label:rule.kind, satisfied:false, reason:'unknown rule'};
-  }
-}
 

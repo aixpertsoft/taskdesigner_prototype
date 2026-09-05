@@ -139,7 +139,7 @@ document.addEventListener('click', e=>{
     case 'pick-step':{
       const id = 's'+(++S.seq);
       const base = {stepId:id, start:!flow.some(x=>x.start), end:false,
-        runtimeConfig:{assignedRoles:[], dueBy:null, requires:[], transitions:[]}};
+        runtimeConfig:{assignedRoles:[], dueBy:null, display:[], transitions:[]}};
       if(btn.dataset.def==='__placeholder'){
         flow.push(Object.assign(base, {kind:'PLACEHOLDER', label:'Additional steps', possibleActivities:[]}));
       }else{
@@ -154,7 +154,7 @@ document.addEventListener('click', e=>{
       const first = Object.values(TASK_DEFS)[0];
       list.push({id:'a'+(++S.seq), label:'', taskDefinition:first?first.name:'',
         inputBindings:{}, outputBindings:{},
-        runtimeConfig:{assignedRoles:[], dueBy:null, display:[], requires:[]}});
+        runtimeConfig:{assignedRoles:[], dueBy:null, display:[]}});
       render(); break;
     }
     case 'act-del': flow[i].possibleActivities.splice(+btn.dataset.j,1); render(); break;
@@ -172,12 +172,6 @@ document.addEventListener('click', e=>{
       const l=rc(flow[i]).transitions, j=+btn.dataset.j;
       [l[j+1],l[j]]=[l[j],l[j+1]]; render(); break;
     }
-    case 'add-rule':
-      (rc(flow[i])[btn.dataset.w] = rc(flow[i])[btn.dataset.w]||[])
-        .push({kind:'data', path:S.definition.dataParameters[0].name, op:'truthy'});
-      render(); break;
-    case 'del-rule':
-      rc(flow[i])[btn.dataset.w].splice(+btn.dataset.j,1); render(); break;
   }
 });
 
@@ -226,7 +220,7 @@ document.addEventListener('change', e=>{
   }
   if(rt==='act-role'){
     const a = flow[i].possibleActivities[+el.dataset.j];
-    const rc2 = a.runtimeConfig = a.runtimeConfig||{assignedRoles:[],dueBy:null,display:[],requires:[]};
+    const rc2 = a.runtimeConfig = a.runtimeConfig||{assignedRoles:[],dueBy:null,display:[]};
     const list = rc2.assignedRoles = rc2.assignedRoles||[];
     if(el.checked){ if(!list.includes(el.dataset.role)) list.push(el.dataset.role); }
     else rc2.assignedRoles = list.filter(x=>x!==el.dataset.role);
@@ -267,7 +261,5 @@ document.addEventListener('change', e=>{
     else rc(flow[i]).display = list.filter(x=>x!==el.dataset.name);
     render(); return;
   }
-  if(rt==='rule-path'){ rc(flow[i])[el.dataset.w][+el.dataset.j].path = el.value; render(); return; }
-  if(rt==='rule-op'){ rc(flow[i])[el.dataset.w][+el.dataset.j].op = el.value; render(); return; }
 });
 
