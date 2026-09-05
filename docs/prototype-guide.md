@@ -33,8 +33,8 @@ send it" cannot give you, and it is why this is worth a workflow at all.
 
 ## Before you start
 
-**Switch users.** The avatars at the top right change who you are. Work and approvals are assigned by
-role, so a single-user session cannot show the feature working. There are four:
+**Switch users.** The avatars at the top right change who you are. Work is assigned by role, so a
+single-user session cannot show the feature working. There are four:
 
 | | Role | In this demo |
 | --- | --- | --- |
@@ -48,8 +48,9 @@ run, what is stopping it, or who it is currently waiting for.
 
 **Two applications, one shell.** The switch at the top left flips between **Runtime** — the end
 user's app: inbox, requests, work items — and **Designer** — the administrator's: the request type
-with its task flow, data and rules, and the task type catalogue. They share live state on purpose:
-change a rule in the designer, switch back, and the gate has already responded. In production these
+with its task flow and data, and the task type catalogue. They share live state on purpose:
+change the flow in the designer, switch back, and the very next request already follows it. In
+production these
 would be separately permissioned applications; the prototype keeps them in one page so the
 cause-and-effect between them stays demonstrable.
 
@@ -57,14 +58,15 @@ cause-and-effect between them stays demonstrable.
 
 ## The five-minute demo
 
-1. The inbox starts empty. Press **New task request** and give it a title — the whole process
-   arrives already instantiated from the request type. The gate is red: one administrator
-   approval is required before anything may run.
-2. Switch to **K. Weber** and press **Approve** in the Approvals rail. Back as **M. Browett**,
-   press **Execute all tasks**. It runs for half a second and **stops** — step 1 needs a person.
-   The card turns amber: *Execution is parked here. Waiting for NetOps.*
-3. You are M. Browett, so it is yours. Press **Submit draft**, fill in a subject, a message and
-   recipients, and submit. The process routes straight on to the approval and parks again — this
+1. The inbox starts empty. Press **New task request** — it wants a title *and the notification
+   subject*: the designer marked the subject **required at creation**, so the request cannot
+   exist without it (the *start form*). The whole process arrives already instantiated.
+2. Press **Execute all tasks** — there is no approval gate; the process itself decides where
+   people are needed. It runs for half a second and **stops** — step 1 needs a person. The card
+   turns amber: *Execution is parked here. Waiting for NetOps.*
+3. You are M. Browett, so it is yours. Press **Submit draft** — the subject arrives **prefilled
+   with what you entered at creation** (refine it or keep it), so fill in the message and
+   recipients and submit. The process routes straight on to the approval and parks again — this
    time for an **Administrator**.
 4. Switch to **K. Weber**. Her *Awaiting my action* tab shows **1**, and the row is flagged
    *your turn*. Open it: the dialog shows the drafted text and what each answer will do. Tick
@@ -74,7 +76,7 @@ cause-and-effect between them stays demonstrable.
    message id have all filled in during the run.
 6. Run it again, but first press **Add task** on the *Additional steps* slot and pick
    **Digital signature** — one click, no form: the activity arrives preconfigured by the request
-   type. Approvals are dismissed because the plan changed, so re-approve. This time the approved
+   type, and its card is marked **added**, so the deviation stays visible. This time the approved
    wording is fingerprinted and the send carries the signature.
 
 Nobody pressed a "continue" button at any point. Closing the human step *is* the resume.
@@ -89,19 +91,17 @@ its results.
 
 ### The inbox
 
-Five tabs — *Awaiting my action*, *Awaiting my approval*, *My requests*, *All open*, *Everything*.
-The two leading tabs answer the two forms of "what needs me?": something needs your **action** — a
-draft to write, a decision to give, a blocker to clear — or something needs your **approval**.
-*Awaiting my action* is a worklist: opening a row opens the **form itself**, ready to act on, with
-the context the designer declared — not the request. A **Show request** button on the row is the
-way in when you do want the whole picture. The original requirements document specified two editors and
-no list view; an approval tool without an inbox is not a daily tool.
+Four tabs — *Awaiting my action*, *My requests*, *All open*, *Everything*. The first answers
+"what needs me?" — a draft to write, a decision to give, a blocker to clear. *Awaiting my action*
+is a worklist: opening a row opens the **form itself**, ready to act on, with the context the
+designer declared — not the request. A **Show request** button on the row is the way in when you
+do want the whole picture. The original requirements document specified two editors and no list
+view; a daily work tool without an inbox is not a daily tool.
 
 ### The request
 
-Four tabs — **Tasks**, **Conversation**, **Data**, **History** — over a Pull Request-shaped object:
-what is proposed, who has signed off, what is still objected to, and a button that stays locked until
-the conditions are met.
+Four tabs — **Tasks**, **Conversation**, **Data**, **History** — over one object: the plan the
+process instantiated, what the run has done so far, and a bar that says what it is doing now.
 
 **Task cards** carry the step, its status, the settings it was configured with, and a small row of
 actions — the execution log and remove; nothing more. A manual step also shows who it is waiting for.
@@ -112,16 +112,10 @@ approver should look at.
 **Task settings are the designer's, never the requester's.** A template step carries the wiring
 its flow step declared; a slot fill carries the wiring of the preconfigured activity that was
 picked — there is no configuration form in the request at all. There is no edit-in-place either:
-changing your mind means remove and re-add, which moves the plan's fingerprint and dismisses
-approvals, exactly as an edit should. The requester's job is deliberately small: raise the request,
-do their manual steps, approve.
+changing your mind means remove and re-add, so the audit trail records the change as what it is.
+The requester's job is deliberately small: raise the request and do their manual steps.
 
-**The approvals rail** shows every eligible approver and their state. The requester appears greyed
-out — you cannot approve your own request, which is `excludeRequester` on the rule, not a hard-coded
-special case.
-
-**Conversation** carries comments and change requests. Each change request has a **Resolve** button;
-while any is open, the gate is red.
+**Conversation** carries comments — discussion stays on the request, next to the work it is about.
 
 **Data** is the interesting one during a run. Two fields are yours to edit — the maintenance window
 and the affected system. The rest are marked **written by a task** and are read-only: they are written
@@ -130,22 +124,19 @@ a document the server signed.
 
 **History** is the audit trail. Note the entries attributed to **System** — see below.
 
-### The execution gate
+### The execution bar
 
-Collapsed by default into one bar. Blocked, it reads *“1 thing still needs doing”* with the Execute
-button disabled; ready, it turns green. Click it to unfold every rule with its own pass/fail and a
-reason, plus the plan's fingerprint.
+One bar under the task list, always telling you what the run is doing: **Ready to execute**,
+**Waiting — Approve notification** with who it waits for, **Blocked — Send notification cannot
+start** with what is missing, or **All tasks completed**.
 
-This request type has two rules: **one Administrator approval, not the requester** and **no
-unresolved change requests**. Both are editable on the *Request types* screen — change the approval
-count and the bar responds immediately.
-
-**The rules run on the server, not in the button.** Starting a run re-evaluates every rule and a
-refusal names the failing rule and its tally: *"1 approval from Administrator (not the requester) —
-0 of 1 so far."* That mirrors the specification, where a `RULE_NOT_SATISFIED` refusal carries the
-full gate result in its details: the server decides, but it also explains, and the client renders
-what it was sent. The original design gated execution in the UI only, which is not an approval
-control, because anyone able to call the API bypasses it.
+**There is deliberately no pre-execution approval gate.** Earlier iterations locked Execute behind
+rules — an approval quorum, no open change requests. Both were removed on purpose: *who may
+execute* is a **user-permission** question, deferred to the platform's permissions; *whether
+something is approved* is an **activity inside the flow** — the demo's approval step, which sees
+the actual content and routes on its answer. What still stops a run is the process itself:
+preconditions, manual steps, and required inputs, each named when it happens — and enforced by the
+engine, not by a disabled button, because anyone able to call the API bypasses a UI-only control.
 
 **And there is deliberately no way to run one task by hand.** Execution happens only through a run,
 which walks the flow in order, honours skips and preconditions, and validates each action's required
@@ -161,12 +152,10 @@ a person closes it — with an assignee, the payload they need to see, and a res
 
 Three things are worth pointing at while a run is parked:
 
-- **The plan is frozen.** *Add task* and *Remove* are disabled. A run is bound to
-  the fingerprint it started on; if step 4 could be edited while steps 1–2 are already done, the hash
-  would move, approvals would be dismissed, and half a plan would have executed under terms nobody
-  approved.
+- **The plan is frozen.** *Add task* and *Remove* are disabled. If step 4 could be edited while
+  steps 1–2 are already done, half a plan would execute under terms nobody had seen.
 - **Only the right people can act.** As M. Browett the approval step says *not yours to do* —
-  he drafted it. Assignment is by role, like approvals.
+  he drafted it. Assignment is by role.
 - **The audit trail names three parties.** Open the log on the send step: it ran as **System**,
   *on behalf of* M. Browett, *triggered by* K. Weber. The person who pressed Execute was long gone,
   and a system whose purpose is recording who agreed to what cannot be vague about that.
@@ -282,12 +271,9 @@ requester or editable by them, and none of it appears on the task form:
 
 Assignment used to be an ordinary form field the engine recognised by name — which meant the
 requester could reassign the approval step to a role they hold. Now it is declared configuration:
-the requester never sees it, and because it is inside the approval hash, reassigning a step
-dismisses the approvals given for the old assignment.
+the requester never sees it and cannot change it.
 
-In the JSON these three sit together under `runtimeConfig`, which is also how the editor groups
-them. All of it is inside the approval hash even so, because what an approver approved includes how
-the step behaves — not just what it is configured with.
+In the JSON these sit together under `runtimeConfig`, which is also how the editor groups them.
 
 **The flow is a single-token state machine, on purpose.** One token walks the arrows: transitions
 route on a field's value and may loop back, and exactly one activity is the start, one or more the
@@ -300,14 +286,10 @@ including their rules — at creation. Same reasoning as `definitionVersion` in 
 
 ### Try the skip — it is just an edge
 
-Tick **Skip the approval step** on the Data tab. Two things happen:
-
-1. **Your approval is dismissed.** That flag is inside the approval hash, so changing it invalidates
-   sign-off — exactly like editing a task does. Without that, you could get approval, then set the
-   flag, then execute, and the approval step would vanish with nothing invalidated.
-2. Re-approve and execute: after signing, the run takes the conditional edge
-   `skipApproval = true` straight past the approval, which is simply never entered. There is no
-   separate skip mechanism — it is one transition among the others, visible in the graph picture.
+Tick **Skip the approval step** on the Data tab and execute: after the draft, the run takes the
+conditional edge `skipApproval = true` straight past the approval, which is simply never entered.
+There is no separate skip mechanism — it is one transition among the others, visible in the graph
+picture.
 
 ### Try the blocker
 
@@ -346,39 +328,30 @@ run's own completed. One lifecycle is enough. The platform's role-gated status w
 (`ProjectStatusTransitionsDef`) remains in the specification as production reuse if a hand-driven
 lifecycle turns out to be needed; the prototype deliberately does not duplicate it.
 
-**Data parameters** — every field is either **filled in by the requester** (inside the hash; frozen
-during a run) or **written by a task** during the run (outside the hash, which is why a run does not
-dismiss its own approvals). The list is fully editable — label, type, owner and default
+**Data parameters** — every field is either **filled in by the requester** (theirs to edit; frozen
+during a run) or **written by a task** during the run (read-only for the requester, so nobody can
+forge what the server produced). Either kind can additionally be marked **at creation**: the New-request
+dialog becomes a *start form* that refuses to create without it — data the process cannot exist
+without never needs a work item to chase it. On a task-written field that is only the *starting*
+value: tasks may refine it later, and their forms arrive prefilled with what is there — which is how
+the demo's subject is demanded at creation yet still editable in the draft step. The list is fully
+editable — label, type, owner and default
 inline, new fields via *Add parameter*. Deleting a field is refused while anything still references
 it by name — a task binding, a step's skip or precondition rule — with the references listed, since
 a silent delete would break those bindings without a trace. Names themselves are fixed once created,
 for the same reason.
 
-**Execution rules** — these gate the *whole run* before it starts, and can be added and removed.
-There are two types, and deliberately only two:
-
-| | |
-| --- | --- |
-| **Minimum approvals from a role** | N people holding a given role must approve. Roles are picked as chips; *not the requester* is a toggle. |
-| **No open change requests** | Nothing raised in the conversation may still be unresolved. Only one of these is offered, since a second would say nothing new. |
-
-A step's own skip and precondition rules live on the **Task flow** instead, because those can only be
+**There are no execution rules any more.** Earlier iterations gated the whole run behind
+pre-execution rules — an approval quorum, no open change requests. Both were removed on purpose:
+*who may execute* is deferred to the platform's **user permissions**, and approval became what it
+always wanted to be — an **activity in the flow**, content-aware and routed on its answer. The
+rules that remain are a step's **preconditions**, on the Task flow, because they can only be
 judged once the run is under way.
 
-**Remove the approvals rule and the approvals rail disappears** from the request editor, the layout
-closes up, and the *Awaiting my approval* inbox tab is hidden — there is nobody to show, and drawing
-an empty panel would invent a step the process does not have. Add it back and everything returns.
-
-One nuance worth knowing: an approval binds to the **plan and the requester's data**, not to the request
-type's rules. So removing and re-adding an approvals rule does not dismiss sign-off already given —
-the plan never changed. Changing the *quorum*, on the other hand, re-evaluates the gate immediately.
-Whether a rule edit should invalidate in-flight requests is the `definitionVersion` question in
-[the specification](specification.md), which the prototype does not model.
-
-**Why the rules are structured, not code:** the original document proposed "boolean typescript
+**Why those rules are structured, not code:** the original document proposed "boolean typescript
 expressions". Both examples it named are structured predicates, and free-text JS contradicts a
 written decision already taken in this codebase. See [the rules section](specification.md#rules).
-Step rules reuse the same `TaskRule` shape as gate rules — there is no second rule engine.
+There is no second rule engine.
 
 ### It is all JSON
 
@@ -429,7 +402,6 @@ their model, and `index.html` is only a consumer:
 | `designer/flow-step-card.js` | one activity's card — data wiring, runtime config, transitions |
 | `designer/flow-graph.js` | the read-only SVG overview of the graph |
 | `designer/data-editor.js` | the Data parameters section and its reference guard |
-| `designer/execution-rules-editor.js` | the gate rules — the two rule types, and adding/removing them |
 | `index.html` | the shell — markup, seed data, `render()`, event wiring, boot |
 
 The render functions are throwaway: the real implementation is React and MUI on the existing designer

@@ -1,8 +1,10 @@
 # Task Request — designer prototype
 
-A clickable prototype for a proposed **Task Request** subsystem in AixBOMS: a lightweight approval
-workflow modelled on the GitHub Pull Request, where a request bundles one or more configured tasks,
-collects approvals and change requests, and unlocks an Execute button only once a set of rules passes.
+A clickable prototype for a proposed **Task Request** subsystem in AixBOMS: a lightweight way to
+run **designed processes**. A request instantiates a request type's task flow — server actions and
+human steps, joined by transitions — and a single-token engine walks it, parking wherever a person
+is needed. Approval, where a process needs one, is a step *in* the flow, deciding on the actual
+content; *who may execute* is deliberately deferred to the platform's user permissions.
 
 Jira: **AIXDEV-23409**
 
@@ -50,19 +52,19 @@ so the plan you see is provably the template, freshly instantiated.
 
 | Control | Where | What it does |
 | --- | --- | --- |
-| **Viewing as** | top right | Switches the current user. This is the key control — approvals are per person, so most of the prototype only makes sense if you switch. |
+| **Viewing as** | top right | Switches the current user. This is the key control — work is assigned by role, so most of the prototype only makes sense if you switch. |
 | **Reset** | top right | Restores the starting state. |
 | **Theme** | top right | Light / dark. |
 | **Runtime / Designer** | top left | The two applications in one shell: the end user's task requests, and the administrator's process design. Designer edits are live in the runtime the moment you switch. |
 
 ### The demo users
 
-| User | Roles | Can approve? |
+| User | Roles | In the demo |
 | --- | --- | --- |
-| **M. Browett** | NetOps | No — raises the request in the demo, and you cannot approve your own request |
-| **A. Schmidt** | Administrator, NetOps | Yes |
-| **K. Weber** | Administrator | Yes |
-| **J. Novak** | Viewer | No — holds no approving role |
+| **M. Browett** | NetOps | Raises the request and drafts the notification |
+| **A. Schmidt** | Administrator, NetOps | Can do either side |
+| **K. Weber** | Administrator | Decides the approval step — the human step the flow routes on |
+| **J. Novak** | Viewer | A bystander — useful for showing what *is* locked |
 
 ### The example
 
@@ -74,13 +76,14 @@ approved wording is wanted — proof that *what was approved* and *what was sent
 
 ### Three things worth trying
 
-**1. Run it.** The inbox starts empty. Press **New task request** — the whole process arrives
-already instantiated from the request type, and the gate is red: it wants an administrator's
-approval. Switch to K. Weber and press **Approve**, then back as M. Browett press
-**Execute all tasks**. It stops immediately — step 1 needs a person. Press **Submit draft** and
-write the notification; the process routes straight to the approval. As K. Weber, tick
-**Approve the wording**, and **Submit decision**. The mail sends by itself. Answer *no* instead and the process walks back to the draft — the flow's transitions
-route on her answer; there is no decline button and no continue button.
+**1. Run it.** The inbox starts empty. Press **New task request** — it demands a title and the
+notification subject (a *start form*: the designer marked the subject required at creation), and
+the whole process arrives already instantiated from the request type. Press **Execute all tasks**
+— no approval gate, it runs at once and stops immediately: step 1 needs a person. Press
+**Submit draft** and write the notification; the process routes straight to the approval — *that*
+approval is a step in the flow. As K. Weber, tick **Approve the wording**, and **Submit
+decision**. The mail sends by itself. Answer *no* instead and the process walks back to the draft
+— the flow's transitions route on her answer; there is no decline button and no continue button.
 
 **2. Watch the data fill in.** The **Data** tab has two fields you own and several marked *written
 by a task*. The subject, text, fingerprint and delivery status are written by the run, through the
@@ -92,14 +95,13 @@ keeps its results — the failure badge and the execution log are both real.
 
 Also worth a look: **Task types** in the top nav — pure functions: what each one needs, what it
 produces, and which server action implements it. How values flow between them is wired per step in
-**Request types**, where changing the required approval count also makes the gate respond
-immediately: configuration, not code.
+**Request types** — the whole process is configuration, not code.
 
 ### What is real and what is not
 
-**Real** — the rules engine, the approval quorum, role checks, the stale-approval dismissal, the
-execution gate, and the run state machine — a single token walking a routed graph, parking on
-manual steps, looping back when an approval answers no. A request's status is derived from that machine — open, running while a run is in flight, completed when the walk reaches an end — rather than
+**Real** — the rule engine behind step preconditions, role checks, and the run state machine — a
+single token walking a routed graph, parking on manual steps, looping back when an approval step
+answers no. A request's status is derived from that machine — open, running while a run is in flight, completed when the walk reaches an end — rather than
 being a second, hand-driven state machine beside it. These are the logic described in
 [the specification](docs/specification.md), so the Execute button is genuinely blocked rather than
 merely drawn greyed out.
@@ -112,12 +114,13 @@ step and resumes by itself, but everything happens inside one browser tab.
 
 ### The most important correction
 
-The gate lives on the server, not in the Execute button's `disabled` attribute — the original
-requirements document gated execution in the UI only, which is not an approval control, because
-anyone able to call the API bypasses it. The prototype's run engine re-evaluates the full rule set
-when a run starts and refuses with the failing rule named; in the real system the bypass test —
-calling `POST /execute` directly with the gate red and getting `403 RULE_NOT_SATISFIED` — is the
-single most important assertion in the POC.
+Control lives on the server, not in a button's `disabled` attribute — the original requirements
+document gated execution in the UI only, which is no control at all, because anyone able to call
+the API bypasses it. The prototype's engine applies that principle to what remains: a run parks on
+unmet preconditions and refuses to dispatch an action whose required inputs are missing, each with
+the reason named. Pre-execution *authorisation* is deliberately deferred to the platform's user
+permissions — and when it arrives, the same rule applies: enforce it at `POST /execute`, never
+only in the UI.
 
 ---
 
@@ -140,7 +143,7 @@ shared/
   core.js                             icons, demo users, helpers, and the RULE ENGINE
 runtime/                              the end user's application
   inbox-view.js                       the landing screen
-  request-view.js                     the request screen: cards, panes, rail, gate bar
+  request-view.js                     the request screen: cards, panes, execution bar
   dialogs.js                          every runtime modal
   run-engine.js                       execution and every mutation
 designer/                             the administrator's application
@@ -150,7 +153,6 @@ designer/                             the administrator's application
   flow-step-card.js                   one activity's card: data wiring, runtime config, edges
   flow-graph.js                       the read-only SVG overview of the graph
   data-editor.js                      the Data parameters section and the reference guard
-  execution-rules-editor.js           the gate rules
 data/                                 documents, no logic
   task-definitions.json.js            the task catalogue
   request-types.json.js               the request types and their task flows
@@ -163,7 +165,7 @@ docs/prototype-guide.md               screen-by-screen walkthrough
 
 Hand-written HTML, CSS and vanilla JavaScript, one folder per key responsibility and one file per
 UI element. The two `data/*.json.js` files hold **data and no logic**; `shared/core.js` carries the
-rule engine (`evaluateRule`/`evaluateGate` — the part worth porting); `run-engine.js` carries
+rule engine (`evaluateRule` — the part worth porting); `run-engine.js` carries
 execution and every mutation; each screen and the
 dialogs render from their own file; each editor owns its model and screen. `index.html` is only the
 shell: markup, `seed()`, `render()`, the delegated event handlers (dispatching on `data-act`; each

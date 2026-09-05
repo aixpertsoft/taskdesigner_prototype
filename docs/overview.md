@@ -35,6 +35,13 @@ The value of the analogy is that people already understand it. A request shows w
 has signed off, what is still objected to, and a button that stays locked — and says why — until the
 conditions are met.
 
+> **Since revised:** the borrowed *pre-execution* controls — gate approvals, change requests and
+> execution rules locking the Execute button — were later **removed from the design**. Approval
+> proved stronger as an **activity inside the flow**: it sees the actual content and the
+> transitions route on its answer. *Who may execute* is deferred to the platform's **user
+> permissions**. The analogy above remains the origin story; a request today is closer to a
+> designed **process instance** than to a Pull Request.
+
 ## The shape of it
 
 **A `TaskRequestDefinition`** is the template, set up once by an administrator. It carries the status
@@ -93,6 +100,10 @@ afterwards, which leaves approve → edit → execute wide open. Every approval 
 task configuration it was given against, and only approvals matching the current hash count. Editing
 a task dismisses prior sign-off — the same mechanism as GitHub's "dismiss stale reviews".
 
+> **Since revised:** the hash mechanism left the design together with the gate approvals it
+> protected. The in-flow approval step needs no equivalent — it decides on the *current* content
+> by construction, and the plan is frozen while a run is in flight.
+
 ### Most of this already exists
 
 The single largest finding from reviewing the requirements document: roughly 70% of the machinery it
@@ -108,9 +119,9 @@ fifth parallel stack.
 | Rule authoring UI pattern | `TransformSpec` + `PipelineBuilder` in the datasource designer |
 | List page, save/dirty handling, ACLs | `EntityListPage`, `useWorkbenchSaveBridge`, `createEntityApi`, `openPermissionsDialog` |
 
-What is genuinely new is small: **N-of-M approval quorum** (nothing in the platform counts distinct
-approvals today) and a **per-attempt execution log** (there is no log table — only single-slot
-`LAST_ERROR` columns).
+What is genuinely new is small: a **per-attempt execution log** (there is no log table — only
+single-slot `LAST_ERROR` columns). The N-of-M approval quorum originally listed here left the
+design with the pre-execution gate.
 
 ---
 

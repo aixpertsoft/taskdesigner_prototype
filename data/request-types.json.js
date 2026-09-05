@@ -8,7 +8,6 @@
 
    SHAPE
      id, name, description   identity
-     executionRules          gate the WHOLE run before it starts
      dataParameters          the fields a request carries
      taskFlow                the ACTIVITY GRAPH a new request is created with
 
@@ -17,6 +16,15 @@
                   one dismisses sign-off, and frozen while a run is in progress.
        EXECUTION  written by a task through an output binding. Outside the hash
                   — which is why a run does not dismiss its own approvals.
+
+     dataParameters[].requiredAtCreation
+       The "start form": the New-request dialog demands this field and creation
+       is refused without it — data the process cannot exist without never
+       needs a work item to chase it. Valid on either owner:
+         on a requester-owned field it is simply mandatory author data;
+         on a task-written field it seeds the STARTING value — the requester
+         provides it at creation, and tasks may refine it later through their
+         output bindings (their forms arrive prefilled with the current value).
 
      taskFlow[] — one entry per ACTIVITY. List order is layout order only; the
      execution order is defined by the transitions.
@@ -85,8 +93,11 @@
        at. v2 introduced transitions/start/end; v3 replaced a placeholder's raw
        possibleTasks with preconfigured possibleActivities; v4 moved ALL data
        wiring here from the task definitions — `defaults` became inputBindings,
-       and output storage became outputBindings. Older documents are refused
-       rather than half-read.
+       and output storage became outputBindings; v5 removed executionRules and
+       the pre-execution approval gate — WHO may execute is deferred to user
+       permissions, and approval, where a process needs one, is an ACTIVITY in
+       the flow (see approveNotification). Older documents are refused rather
+       than half-read.
      - Everything is a named key; references are by name, never by index.
      - Every union carries an explicit discriminator: rules have `kind`,
        parameters have `owner` and `type`, bindings have `kind`, placeholder
@@ -94,17 +105,12 @@
      - Unknown fields are preserved across an import/export round-trip.
    =========================================================================== */
 window.REQUEST_TYPES = {
-  "apiVersion": "aixboms.requesttype/v4",
+  "apiVersion": "aixboms.requesttype/v5",
   "requestTypes": [
     {
       "id": "maintenance-notification",
       "name": "Maintenance Notification",
       "description": "Tell affected customers about planned maintenance, with proof of exactly what was sent and who approved it.",
-
-      "executionRules": [
-        {"kind": "approvals", "min": 1, "roles": ["Administrator"], "excludeRequester": true},
-        {"kind": "noUnresolvedChangeRequests"}
-      ],
 
       "dataParameters": [
         {"name": "window", "label": "Maintenance window", "type": "text", "owner": "AUTHOR",
@@ -115,7 +121,7 @@ window.REQUEST_TYPES = {
          "defaultValue": false},
 
         {"name": "notificationSubject", "label": "Notification subject", "type": "text", "owner": "EXECUTION",
-         "defaultValue": ""},
+         "requiredAtCreation": true, "defaultValue": ""},
         {"name": "notificationBody", "label": "Notification text", "type": "text", "owner": "EXECUTION",
          "defaultValue": ""},
         {"name": "recipients", "label": "Recipients", "type": "text", "owner": "EXECUTION",

@@ -32,8 +32,6 @@ function dataParamUses(name){
     (c.display||[]).forEach(n=>{ if(n===name)
       uses.push(`shown to the person on "${stepMeta(st).label}"`); });
   });
-  (S.definition.executionRules||[]).forEach(rule=>{ if(rule.kind==='data'&&rule.path===name)
-    uses.push('an execution rule'); });
   return uses;
 }
 
@@ -41,9 +39,12 @@ function defData(){
   return `<div style="padding:15px">
     <p style="margin:0 0 12px;color:var(--ink-3);font-size:13px">
       Fields copied into every new request. A field is either <b>filled in by the requester</b> —
-      covered by the approval hash, so changing it dismisses sign-off, and frozen while a run is in
-      progress — or <b>written by a task</b> during the run, outside the hash, which is why a run
-      does not dismiss its own approvals.</p>
+      theirs to edit, frozen while a run is in progress — or <b>written by a task</b> during the
+      run, read-only for the requester so nobody can forge what the server produced. Either kind
+      can additionally be demanded
+      <b>at creation</b>: the New-request form refuses to create without it. On a task-written
+      field that is only the <b>starting value</b> — tasks may refine it later, and their forms
+      arrive prefilled with what is there.</p>
     ${S.definition.dataParameters.map((p,j)=>{
       const uses = dataParamUses(p.name);
       return `<div class="te-field">
@@ -58,6 +59,10 @@ function defData(){
           <option value="AUTHOR" ${p.owner!=='EXECUTION'?'selected':''}>filled in by the requester</option>
           <option value="EXECUTION" ${p.owner==='EXECUTION'?'selected':''}>written by a task</option>
         </select>
+        <label class="flagchip ${p.requiredAtCreation?'on':''}"
+          title="The requester must provide this when creating the request — creation is refused without it.${p.owner==='EXECUTION'?' It is only the starting value: tasks may refine it later.':''}">
+          <input type="checkbox" data-dp="atcreation" data-j="${j}"
+            ${p.requiredAtCreation?'checked':''}>at creation</label>
         ${p.type==='boolean'
           ? `<label class="switch" title="Default"><input type="checkbox" data-dp="default" data-j="${j}"
                ${p.defaultValue?'checked':''}><span class="track"></span><span style="font-size:12px">default</span></label>`
@@ -72,8 +77,7 @@ function defData(){
     <div style="margin-top:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <button class="btn" data-dp="add">${I.plus} Add parameter</button>
       <span class="hint">New parameters reach <b>new</b> requests; existing requests keep the data
-        they were created with. Moving a field between the two kinds changes what the approval hash
-        covers, so it can dismiss sign-off on open requests.</span>
+        they were created with. Moving a field between the two kinds changes who may write it.</span>
     </div>
   </div>`;
 }
@@ -98,6 +102,9 @@ function dlgAddDataParam(){
         </select></div>
       <div class="field"><label>Default</label>
         <input type="text" id="dp-default" placeholder=""></div>
+      <label class="switch"><input type="checkbox" id="dp-atcreation">
+        <span class="track"></span><span style="font-size:12.5px">Must be filled in when the
+        request is created</span></label>
     </div>
     <div class="dfoot">
       <button class="btn" data-act="close">Cancel</button>
@@ -127,8 +134,10 @@ document.addEventListener('click', e=>{
     if(!/^[A-Za-z][A-Za-z0-9]*$/.test(name)){ toast('The name must be letters and digits, starting with a letter'); return; }
     if(list.some(p=>p.name===name)){ toast(`"${name}" already exists`); return; }
     if(!label){ toast('Give it a label'); return; }
-    list.push({name, label, type, owner,
-      defaultValue: type==='boolean' ? dflt==='true' : dflt});
+    const np = {name, label, type, owner,
+      defaultValue: type==='boolean' ? dflt==='true' : dflt};
+    if((document.getElementById('dp-atcreation')||{}).checked) np.requiredAtCreation = true;
+    list.push(np);
     closeModal(); render(); toast('Parameter added'); return;
   }
 });
@@ -141,6 +150,7 @@ document.addEventListener('change', e=>{
     if(k==='label') p.label = el.value;
     else if(k==='type'){ p.type = el.value; p.defaultValue = el.value==='boolean' ? false : String(p.defaultValue==null?'':p.defaultValue); }
     else if(k==='owner') p.owner = el.value;
+    else if(k==='atcreation'){ if(el.checked) p.requiredAtCreation = true; else delete p.requiredAtCreation; }
     else if(k==='default') p.defaultValue = p.type==='boolean' ? el.checked : el.value;
     render(); return;
   }

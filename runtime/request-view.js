@@ -1,6 +1,6 @@
 /* ===========================================================================
-   Request view — task cards, the conversation/data/history panes, the
-   approvals rail and the execution gate bar.
+   Request view — task cards, the conversation/data/history panes, and the
+   execution bar.
 
    Part of the split prototype: classic scripts sharing one global scope, so
    this file may call anything its siblings declare — resolution happens at
@@ -11,8 +11,6 @@
 /* ============================ render: request ============================ */
 function viewRequest(){
   const r = req(); if(!r) return viewInbox();
-  const gate = evaluateGate(r);
-  const openCr = r.changeRequests.filter(c=>!c.resolved).length;
 
   return `
   <div class="rq-head">
@@ -31,24 +29,22 @@ function viewRequest(){
 
   <div class="tabs" role="tablist">
     <button role="tab" aria-selected="${S.requestTab==='tasks'}" data-rtab="tasks">Tasks <span class="count">${r.taskItems.length}</span></button>
-    <button role="tab" aria-selected="${S.requestTab==='talk'}"  data-rtab="talk">Conversation <span class="count">${r.comments.length+r.changeRequests.length}</span>
-      ${openCr?`<span class="pill warn" style="margin-left:5px">${openCr} to resolve</span>`:''}</button>
+    <button role="tab" aria-selected="${S.requestTab==='talk'}"  data-rtab="talk">Conversation <span class="count">${r.comments.length}</span></button>
     <button role="tab" aria-selected="${S.requestTab==='data'}"  data-rtab="data">Data</button>
     <button role="tab" aria-selected="${S.requestTab==='hist'}"  data-rtab="hist">History <span class="count">${r.history.length}</span></button>
   </div>
 
-  <div class="rq-body ${requiresApprovals()?"":"norail"}">
+  <div class="rq-body norail">
     <div>
-      ${S.requestTab==='tasks' ? paneTasks(r,gate)
+      ${S.requestTab==='tasks' ? paneTasks(r)
        :S.requestTab==='talk'  ? paneTalk(r)
        :S.requestTab==='data'  ? paneData(r)
        :                         paneHist(r)}
     </div>
-    ${requiresApprovals()?`<aside class="rail">${panelApprovals(r,gate)}</aside>`:''}
   </div>`;
 }
 
-function paneTasks(r,gate){
+function paneTasks(r){
   /* A run in flight freezes the plan: the hash it is executing must not move
      under it, or half a plan runs under terms nobody approved. The only way a
      requester extends a plan is a placeholder slot the designer put there. */
@@ -58,7 +54,7 @@ function paneTasks(r,gate){
       ? r.taskItems.map(t=>t.kind==='PLACEHOLDER' ? slotCard(r,t,locked) : taskCard(r,t,locked)).join('')
       : `<div class="empty">No tasks yet. A request needs at least one task before it can be executed.</div>`}
   </div>
-  ${gateBox(r,gate)}`;
+  ${gateBox(r)}`;
 }
 
 /* A placeholder slot: the designed extension point, rendered as the Add button
@@ -166,17 +162,18 @@ function taskCard(r,t,locked){
 function paneData(r){
   const frozen = runInFlight(r);
   return `<div class="card">
-    ${frozen?`<div class="databar">${I.pause} A run is in progress, so the fields it was approved
-      against are frozen. Values a blocked step needs are supplied through the work item.</div>`:''}
+    ${frozen?`<div class="databar">${I.pause} A run is in progress, so your fields are frozen
+      until it ends. Values a blocked step needs are supplied through the work item.</div>`:''}
     <div class="formgrid">
     ${S.definition.dataParameters.map(p=>{
       const v = r.data[p.name];
-      /* EXECUTION fields are written by a task through the output wiring and sit outside the
-         hash. AUTHOR fields are inside it, so they freeze while a run holds it. */
+      /* EXECUTION fields are written by a task through the output wiring — read-only
+         here, or a requester could forge what the server produced. AUTHOR fields
+         freeze while a run is in flight, so the plan's inputs stay stable under it. */
       const written = p.owner==='EXECUTION';
       const disabled = written || frozen;
       const note = written ? `Written by a task — not editable here.`
-                 : frozen  ? `Frozen: the approvals for this run cover this value.` : '';
+                 : frozen  ? `Frozen while the run is in progress.` : '';
       if(p.type==='boolean'){
         return `<div class="field">
           <label>${esc(p.label)}${written?' <span class="pill neutral">written by a task</span>':''}</label>
@@ -187,8 +184,8 @@ function paneData(r){
             <span>${v?'Yes':'No'}</span>
           </label>
           ${note?`<span class="hint">${esc(note)}</span>`
-                :`<span class="hint">A task's skip rule reads this — and it is inside the hash,
-                   so changing it dismisses approvals.</span>`}
+                :`<span class="hint">A transition can route on this — like skipping the
+                   approval step.</span>`}
         </div>`;
       }
       return `<div class="field">
@@ -203,22 +200,14 @@ function paneData(r){
 }
 
 function paneTalk(r){
-  const items = [...r.comments.map(c=>({...c,kind:'comment'})),
-                 ...r.changeRequests.map(c=>({...c,kind:'cr'}))]
-                .sort((a,b)=>a.at.localeCompare(b.at));
   return `<div class="card"><div class="thread">
-    ${items.map(m=>`<div class="msg ${m.kind==='cr'?'is-cr':''} ${m.resolved?'done':''}">
+    ${r.comments.map(m=>`<div class="msg">
       <div class="av">${USERS[m.user].initials}</div>
       <div class="bubble">
         <div class="bhead">
           <b>${esc(USERS[m.user].name)}</b>
-          <span>${m.kind==='cr'?'requested a change':'commented'}</span>
+          <span>commented</span>
           <span>·</span><span class="mono">${esc(m.at)}</span>
-          ${m.kind==='cr'?`
-            <span class="pill ${m.resolved?'ok':'warn'}" style="margin-left:auto">${m.resolved?'resolved':'open'}</span>
-            <button class="btn sm ghost" data-act="toggle-cr" data-id="${m.id}"
-              title="${m.resolved?'Reopen this change request':'Mark this change request resolved'}">
-              ${m.resolved?'Reopen':I.check+' Resolve'}</button>`:''}
         </div>
         <div class="btext">${esc(m.text)}</div>
       </div>
@@ -228,9 +217,8 @@ function paneTalk(r){
         <span style="font-weight:700">B</span><span style="font-style:italic">I</span>
         <span style="text-decoration:underline">U</span><span>•</span><span>1.</span><span>&lt;/&gt;</span>
       </div>
-      <textarea id="composer" placeholder="Add a comment, or raise a change request…"></textarea>
+      <textarea id="composer" placeholder="Add a comment…"></textarea>
       <div class="crow">
-        <button class="btn sm" data-act="post-cr">Request changes</button>
         <button class="btn sm primary" data-act="post-comment">Comment</button>
       </div>
     </div>
@@ -247,112 +235,41 @@ function paneHist(r){
   </div></div>`;
 }
 
-function panelApprovals(r,gate){
-  const hash = gate.hash;
-  const rule = S.definition.executionRules.find(x=>x.kind==='approvals');
-  const good = r.approvals.filter(a=>a.decision==='APPROVED'&&a.hash===hash&&
-    (!rule||!rule.roles.length||rule.roles.some(ro=>hasRole(a.user,ro)))&&
-    (!rule||!rule.excludeRequester||a.user!==r.requester));
-  const mine = r.approvals.find(a=>a.user===S.me);
-  const isRequester = r.requester===S.me;
-  const canApprove = !isRequester && (!rule||!rule.roles.length||rule.roles.some(ro=>hasRole(S.me,ro)))
-                     && requestStatus(r)==='OPEN';
-
-  const rows = USER_ORDER.filter(u=>u!==r.requester).map(u=>{
-    const a = r.approvals.find(x=>x.user===u);
-    const stale = a && a.hash!==hash;
-    const eligible = !rule||!rule.roles.length||rule.roles.some(ro=>hasRole(u,ro));
-    let note = eligible ? USERS[u].roles.join(', ') : `${USERS[u].roles.join(', ')} — cannot approve this type`;
-    if(a) note = stale ? 'dismissed — a task was edited' : (a.decision==='APPROVED'?`approved ${a.at}`:`rejected ${a.at}`);
-    return `<div class="approver ${a&&!stale&&a.decision==='APPROVED'?'did':''} ${stale?'stale':''}">
-      <span class="av">${a&&!stale?(a.decision==='APPROVED'?I.check:I.cross):USERS[u].initials}</span>
-      <span class="who">${esc(USERS[u].name)}<small>${esc(note)}</small></span>
-    </div>`;
-  }).join('');
-
-  return `<section class="panel">
-    <div class="panel-head">
-      <h3>Approvals</h3>
-      <span class="pill ${rule&&good.length>=rule.min?'ok':'neutral'}">${good.length} of ${rule?rule.min:0}</span>
-    </div>
-    <div class="panel-body">
-      ${rows}
-      <div class="approver" style="opacity:.65">
-        <span class="av">${USERS[r.requester].initials}</span>
-        <span class="who">${esc(USERS[r.requester].name)}<small>requester — cannot approve their own</small></span>
-      </div>
-      ${canApprove
-        ? (mine && mine.hash===hash
-            ? `<button class="btn sm" data-act="unapprove" style="width:100%;justify-content:center">Withdraw my ${mine.decision==='APPROVED'?'approval':'rejection'}</button>`
-            : `<div style="display:flex;gap:6px">
-                 <button class="btn sm go" data-act="approve" style="flex:1;justify-content:center">${I.check} Approve</button>
-                 <button class="btn sm" data-act="reject" style="justify-content:center">Reject</button>
-               </div>`)
-        : `<div class="hint" style="font-size:11.5px;color:var(--ink-3)">
-             ${isRequester?'You opened this request, so you cannot approve it.'
-               : requestStatus(r)==='RUNNING' ? 'Approvals are closed while a run is in progress — the plan is frozen.'
-               : requestStatus(r)!=='OPEN' ? 'Approvals are closed — the work is done.'
-               : `${esc(me().name)} does not hold a role that may approve this request type.`}
-           </div>`}
-    </div>
-  </section>`;
-}
-
-
-function gateBox(r,gate){
+function gateBox(r){
   const running = r.taskItems.some(t=>t.status==='RUNNING');
-  const checks = [
-    ...(gate.noTasks?[{label:'At least one task', satisfied:false, reason:'this request has none yet'}]:[]),
-    ...gate.rules,
-  ];
-  const todo = checks.filter(x=>!x.satisfied).length;
   const waiting = r.run && r.run.state==='WAITING' ? openWorkItems(r)[0] : null;
-  const allDone = r.taskItems.length>0 && r.taskItems.every(t=>t.status==='SUCCEEDED');
+  const allDone = requestStatus(r)==='COMPLETED';
+  const canRun  = r.taskItems.length>0 && !runInFlight(r) && !allDone;
 
-  /* Three states share this bar: a run parked on a person, a run working,
-     and no run at all — where the gate decides whether one may start. */
+  /* The run-state bar. There is deliberately no approval gate any more: WHO
+     may execute is a user-permission question in the real system, and
+     approval, where a process needs one, is an activity inside the flow. What
+     still stops a run is the process itself — preconditions, manual steps,
+     required inputs. */
   const head = waiting
     ? `<span class="gi pausing">${I.pause}</span>
        <span>${esc(waiting.kind==='BLOCKER' ? 'Blocked — '+waiting.title : 'Waiting — '+waiting.title)} <span class="gsub">— ${esc(eligibleFor(waiting).map(u=>USERS[u].name).join(' or '))}${
          waiting.dueAt?`, due ${esc(waiting.dueAt)}`:''}</span></span>`
     : allDone
     ? `<span class="gi">${I.check}</span><span>All tasks completed <span class="gsub">— nothing left to run</span></span>`
-    : gate.canExecute
-    ? `<span class="gi">${I.check}</span><span>Ready to execute <span class="gsub">— all ${checks.length} checks passed</span></span>`
-    : `<span class="gi">${I.warn}</span><span>${todo} thing${todo===1?'':'s'} still ${todo===1?'needs':'need'} doing <span class="gsub">— before this request may run</span></span>`;
+    : r.taskItems.length
+    ? `<span class="gi">${I.check}</span><span>Ready to execute <span class="gsub">— the run pauses wherever the process needs a person</span></span>`
+    : `<span class="gi">${I.warn}</span><span>No tasks <span class="gsub">— a request needs at least one task to run</span></span>`;
 
   const action = waiting
     ? `<button class="btn ghost" data-act="cancel-run" ${mayCancel(r)?'':'disabled'}
          title="${mayCancel(r)?'Abandon the run and unlock the request for editing'
                              :'Only the requester or an administrator may cancel a run'}">Cancel run</button>`
-    : `<button class="btn ${gate.canExecute&&!allDone?'go':''}" data-act="run-all"
-         ${gate.canExecute&&!running&&!allDone&&!runInFlight(r)?'':'disabled'}
-         title="${gate.canExecute?'Run every task that has not succeeded yet':'Blocked until every check passes'}">
+    : `<button class="btn ${canRun?'go':''}" data-act="run-all"
+         ${canRun&&!running?'':'disabled'}
+         title="${canRun?'Run every task that has not succeeded yet':'Nothing to run'}">
          ${running?I.spin+' Running…':I.play+' Execute all tasks'}
        </button>`;
 
-  return `<section class="gate ${waiting?'parked':gate.canExecute?'open':''}">
+  return `<section class="gate ${waiting?'parked':canRun?'open':''}">
     <div class="gate-bar">
-      <button class="gate-toggle" data-act="toggle-gate" aria-expanded="${S.gateOpen}" aria-controls="gate-detail">
-        ${head}
-        <span class="chev">${I.chevD}</span>
-      </button>
+      <div class="gate-toggle" style="cursor:default">${head}</div>
       ${action}
     </div>
-    ${S.gateOpen?`<div class="gate-detail" id="gate-detail">
-      <div class="gate-rules">
-        ${checks.map(x=>`<div class="grule ${x.satisfied?'pass':'fail'}">
-          <span class="gi">${x.satisfied?I.check:I.cross}</span>
-          <span class="gt">${esc(x.label)}<div class="gr">${esc(x.reason)}</div></span>
-        </div>`).join('')}
-      </div>
-      <div class="gate-foot">
-        <span class="hash" title="A fingerprint of every task and its settings. Edit a task and it changes — which is what dismisses approvals given for the old one.">fingerprint ${gate.hash}</span>
-        ${r.run?`<span class="hash" style="margin-left:12px"
-          title="A run is bound to the fingerprint it started on, and freezes the plan until it ends.">run ${esc(r.run.id)} · ${esc(r.run.state.toLowerCase())} · step ${Math.min(r.run.cursor+1,r.taskItems.length)} of ${r.taskItems.length} · started by ${esc(USERS[r.run.startedBy].name)}</span>`:''}
-      </div>
-    </div>`:''}
   </section>`;
 }
-
-

@@ -1,7 +1,7 @@
 /* ===========================================================================
    Core — icons, demo users, helpers, and the RULE ENGINE.
 
-   evaluateRule/evaluateGate mirror the specification and are the part worth
+   evaluateRule mirrors the specification and is the part worth
    porting; see docs/prototype-guide.md, Porting notes.
 
    Part of the split prototype: classic scripts sharing one global scope, so
@@ -49,8 +49,7 @@ const USER_ORDER = ['mb','as','kw','jn'];
 
 /* A request's status is DERIVED from its execution, never set by hand. The
    original design had a second, user-driven state machine next to the run's —
-   with APPROVED-the-status competing with the approvals rule for the same word.
-   One lifecycle is enough: open until the work is done. */
+   competing with the run for the same words. One lifecycle is enough. */
 const STATUS_TONE = {OPEN:'blue', RUNNING:'warn', COMPLETED:'ok'};
 function requestStatus(r){
   /* Derived from the run, not from the items: with conditional routing, the
@@ -72,7 +71,7 @@ const req = ()=>S.requests.find(r=>r.id===S.openRequestId);
 const hasRole = (u,r)=>USERS[u].roles.includes(r);
 const sleep = ms=>new Promise(r=>setTimeout(r,ms));
 
-/* Deterministic stand-in for the SHA-256 taskConfigHash in the spec. */
+/* Deterministic 12-hex stand-in hash — message ids, the demo fingerprint. */
 function fnv(str){
   let h1=0x811c9dc5, h2=0x01000193;
   for(let i=0;i<str.length;i++){
@@ -81,39 +80,6 @@ function fnv(str){
   }
   return (h1.toString(16)+h2.toString(16)).padStart(12,'0').slice(0,12);
 }
-/* What an approval is bound to.
-
-   Task configs alone are not enough once a step can be skipped by a data flag:
-   approve, set skipApproval, execute, and the approval step vanishes without
-   anything being invalidated — approve-then-edit-then-execute wearing a hat.
-   So the hash covers the plan AND the author-owned data.
-
-   Execution-written fields are excluded, or a run would dismiss its own
-   approvals the moment a task stored an output. */
-function authorData(r){
-  const out = {};
-  (S.definition.dataParameters||[])
-    .filter(p=>p.owner!=='EXECUTION')
-    .forEach(p=>{ out[p.name] = r.data[p.name]; });
-  return out;
-}
-function taskConfigHash(r){
-  /* The routing is in here even though the requester cannot set it: what an
-     approver approved includes where the process may go — reassigning a step,
-     rewiring an edge or filling a placeholder slot all move the hash. */
-  const items = (r.taskItems||[]).map(t=>
-    ({d:t.def, k:t.kind, i:t.inputBindings, o:t.outputBindings, q:t.requires, x:t.transitions,
-      b:t.start, e:t.end, a:t.assignedRoles, u:t.dueBy}));
-  return fnv(JSON.stringify({tasks:items, data:authorData(r)}));
-}
-
-/* Does this request type require approval at all? If not, there is no approvals
-   rail to draw and no "awaiting my approval" inbox to fill — showing either would
-   be inventing a step the process does not have. */
-function requiresApprovals(){
-  return (S.definition.executionRules||[]).some(x=>x.kind==='approvals');
-}
-
 /* A run is in flight while it is working or parked on a work item. */
 function runInFlight(r){ return !!r.run && (r.run.state==='RUNNING' || r.run.state==='WAITING'); }
 function openWorkItems(r){ return (r.workItems||[]).filter(w=>w.state==='OPEN'); }
@@ -132,35 +98,14 @@ function toast(msg){
 }
 
 /* ============================ rule engine ============================ */
-/* Mirrors evaluateRule() from the specification, reasons included. */
+/* Mirrors evaluateRule() from the specification, reasons included. One kind
+   remains in use — the structured data check that step preconditions
+   ("do not start until…") are made of. There is deliberately no pre-execution
+   approval gate any more: WHO may execute becomes a user-permission question
+   in the real system, and approval, where a process needs one, is an activity
+   in the flow. No expression language, as everywhere else. */
 function evaluateRule(rule,r){
-  const hash = taskConfigHash(r);
   switch(rule.kind){
-    case 'approvals':{
-      const roles = rule.roles||[];
-      const valid = r.approvals.filter(a=>
-        a.decision==='APPROVED' &&
-        a.hash===hash &&
-        (!roles.length || roles.some(ro=>hasRole(a.user,ro))) &&
-        (!rule.excludeRequester || a.user!==r.requester));
-      const dismissed = r.approvals.filter(a=>a.decision==='APPROVED' && a.hash!==hash).length;
-      const label = `${rule.min} approval${rule.min===1?'':'s'}`
-        + (roles.length?` from ${roles.join(' or ')}`:'')
-        + (rule.excludeRequester?' (not the requester)':'');
-      let reason = `${valid.length} of ${rule.min} so far`;
-      if(dismissed) reason += ` — ${dismissed} dismissed because a task was edited after signing off`;
-      return {label, satisfied: valid.length>=rule.min, reason};
-    }
-    case 'noUnresolvedChangeRequests':{
-      const open = r.changeRequests.filter(c=>!c.resolved).length;
-      return {label:'No unresolved change requests', satisfied:open===0,
-              reason: open?`${open} still open`:'all resolved'};
-    }
-    case 'allTasksSucceeded':{
-      const bad = r.taskItems.filter(t=>t.status!=='SUCCEEDED').length;
-      return {label:'Every task has run successfully', satisfied:bad===0,
-              reason: bad?`${bad} not yet successful`:'all succeeded'};
-    }
     case 'data':{
       const v = r.data[rule.path];
       const param = S.definition.dataParameters.find(p=>p.name===rule.path);
@@ -170,26 +115,5 @@ function evaluateRule(rule,r){
     }
     default: return {label:rule.kind, satisfied:false, reason:'unknown rule'};
   }
-}
-/* Why the gate said no, in one sentence. The prototype's stand-in for the
-   GateDTO the real server returns inside a RULE_NOT_SATISFIED refusal — the
-   server decides, but it also explains, and the client renders what it sent. */
-function gateRefusal(r, gate){
-  if(gate.noTasks) return 'a request needs at least one task';
-  const failing = gate.rules.filter(x=>!x.satisfied);
-  if(!failing.length) return 'rules are not satisfied';
-  return `${failing[0].label} — ${failing[0].reason}`
-       + (failing.length>1?` (and ${failing.length-1} more, see the checklist)`:'');
-}
-
-function evaluateGate(r){
-  const rules = S.definition.executionRules.map(rule=>evaluateRule(rule,r));
-  const noTasks = r.taskItems.length===0;
-  return {
-    rules,
-    hash: taskConfigHash(r),
-    noTasks,
-    canExecute: !noTasks && rules.every(x=>x.satisfied),
-  };
 }
 

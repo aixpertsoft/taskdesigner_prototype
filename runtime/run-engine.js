@@ -1,5 +1,5 @@
 /* ===========================================================================
-   Run engine — execution and every mutation: approvals, the graph walk,
+   Run engine — execution and every mutation: the graph walk,
    parking on work items and blockers, routing, resume, cancel.
 
    The flow is a SINGLE-TOKEN STATE MACHINE. A run holds one position — the
@@ -18,21 +18,6 @@
 
 /* ============================ mutations ============================ */
 function note(r,text,who){ r.history.push({at:stamp(),who:who||S.me,text}); }
-
-function approve(decision){
-  const r=req(); const hash=taskConfigHash(r);
-  r.approvals = r.approvals.filter(a=>a.user!==S.me);
-  r.approvals.push({id:'a'+(++S.seq), user:S.me, decision, at:stamp(), hash});
-  note(r, decision==='APPROVED'?'approved this request':'rejected this request');
-  r.version++;
-  render(); toast(decision==='APPROVED'?'Approved':'Rejected');
-}
-function unapprove(){
-  const r=req();
-  r.approvals = r.approvals.filter(a=>a.user!==S.me);
-  note(r,'withdrew their review'); r.version++;
-  render(); toast('Withdrawn');
-}
 
 /* ============================ the graph ============================ */
 function itemByStep(r,stepId){ return r.taskItems.find(t=>t.stepId===stepId); }
@@ -120,13 +105,11 @@ function itemLabel(t){
 
 function startRun(){
   const r=req();
-  const gate=evaluateGate(r);
-  /* The server re-evaluates the gate; the button state is only a hint. */
-  if(!gate.canExecute){
-    S.gateOpen=true; render();
-    toast(`The server refused: ${gateRefusal(r,gate)}`); return;
-  }
+  /* No approval gate: WHO may execute is a user-permission question in the
+     real system. What still stops a run is the process itself — preconditions,
+     manual steps, required inputs. */
   if(runInFlight(r)){ toast('A run is already in progress'); return; }
+  if(!r.taskItems.length){ toast('This request has no tasks to run'); return; }
 
   /* A FAILED run is resumable at the activity it failed on; anything else
      starts a fresh walk from the start activity. */
@@ -139,7 +122,7 @@ function startRun(){
   const first = startItem(r);
   if(!first){ toast('This flow has no start activity'); return; }
   r.taskItems.forEach(t=>{ if(t.status!=='NOT_RUN'){ t.status='NOT_RUN'; t.error=null; } });
-  r.run = {id:'run'+(++S.seq), state:'RUNNING', node:first.stepId, hash:gate.hash,
+  r.run = {id:'run'+(++S.seq), state:'RUNNING', node:first.stepId,
            startedBy:S.me, startedAt:stamp(), waitingOn:null, resumed:false, triggeredBy:null};
   note(r,'started an execution run');
   driveRun(r);
@@ -265,9 +248,9 @@ async function driveRun(r){
 }
 
 /* Resolving a blocker: the missing values are supplied through the work item, not
-   by editing the Data tab. They are execution-written, so they sit outside the
-   hash and the approvals given for this run survive — and the audit trail records
-   who supplied them. If nothing satisfies the rule, the run stays parked. */
+   by editing the Data tab. They are execution-written, so the frozen plan itself
+   is untouched — and the audit trail records who supplied them. If nothing
+   satisfies the rule, the run stays parked. */
 async function resolveBlocker(id, values){
   const r=req();
   const w=r.workItems.find(x=>x.id===id); if(!w||w.state!=='OPEN') return;
@@ -322,8 +305,8 @@ async function completeWorkItem(id,result){
 /* ============================ placeholder slots ============================ */
 /* Filling a slot splices a real activity into the request's own graph copy:
    the new task takes over the slot's outgoing transitions and the slot points
-   at it, so the token walks prev → fills, in order → onward. Both filling and
-   unfilling move the plan's hash — approvers see every deviation. */
+   at it, so the token walks prev → fills, in order → onward. Fills are marked
+   "added" on their cards, so every deviation from the standard plan is visible. */
 function fillSlot(r, slotId, activityId){
   const slot = r.taskItems.find(t=>t.id===slotId);
   if(!slot || slot.kind!=='PLACEHOLDER') return null;

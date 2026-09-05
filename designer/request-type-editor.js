@@ -1,8 +1,10 @@
 /* ===========================================================================
    Request type editor — the administrator's side: the SCREEN SHELL.
 
-   A request type carries four things: the status graph, the TASK FLOW, the
-   data parameters, and the execution rules that gate a run. Since v4 it also
+   A request type carries two things: the TASK FLOW and its DATA PARAMETERS.
+   There is no pre-execution approval gate — WHO may execute is a
+   user-permission question in the real system, and approval, where a process
+   needs one, is an activity in the flow. Since v4 it also
    carries ALL the data wiring — each flow step is a call site for a task
    type, which is itself a pure function with no reference to any request.
 
@@ -24,7 +26,7 @@
 /* ============================ the document ============================ */
 /* request-types.json.js is the source. Everything the editor changes is changed
    in this object, so Export hands back exactly what the server would store. */
-const RT_API = 'aixboms.requesttype/v4';
+const RT_API = 'aixboms.requesttype/v5';
 let REQUEST_TYPE_DOC = window.REQUEST_TYPES || {apiVersion:RT_API, requestTypes:[]};
 
 /* Refuse an unknown major rather than guessing at it — a file from a newer
@@ -42,7 +44,7 @@ function currentRequestType(){
   /* A deep copy: the session edits its own instance, and Export re-reads it. */
   return JSON.parse(JSON.stringify(list[0]||{
     id:'empty', name:'Untitled',
-    executionRules:[], dataParameters:[], taskFlow:[]}));
+    dataParameters:[], taskFlow:[]}));
 }
 /* The session's definition IS the document's first entry — write it back so an
    export reflects what is on screen. */
@@ -69,13 +71,12 @@ function viewDefinition(){
   </div>
   <div class="def-body">
     <nav class="sidenav">
-      ${[['flow','Task flow'],['data','Data parameters'],['rules','Execution rules']]
+      ${[['flow','Task flow'],['data','Data parameters']]
         .map(([k,l])=>`<button data-def="${k}" aria-current="${S.defSection===k}">${l}</button>`).join('')}
     </nav>
     <div class="card">
       ${S.defSection==='flow'    ? defFlow()
-       :S.defSection==='data'    ? defData()
-       :                           defRules()}
+       :                           defData()}
     </div>
   </div>`;
 }

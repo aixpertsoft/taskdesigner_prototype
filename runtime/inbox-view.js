@@ -15,24 +15,12 @@ function inboxFilter(){
   if(S.inboxTab==='action'){
     return S.requests.filter(r=>myWorkItems(r,m).length>0);
   }
-  if(S.inboxTab==='awaiting'){
-    if(!requiresApprovals()) return [];
-    return S.requests.filter(r=>{
-      if(r.requester===m) return false;
-      if(requestStatus(r)!=='OPEN') return false;
-      const hash=taskConfigHash(r);
-      return !r.approvals.some(a=>a.user===m && a.hash===hash);
-    });
-  }
   if(S.inboxTab==='mine')   return S.requests.filter(r=>r.requester===m);
   if(S.inboxTab==='open')   return S.requests.filter(r=>requestStatus(r)!=='COMPLETED');
   return S.requests;
 }
 function viewInbox(){
-  /* If the tab we are on has just been hidden, fall back rather than showing nothing. */
-  if(S.inboxTab==='awaiting' && !requiresApprovals()) S.inboxTab='open';
   const counts = {
-    awaiting: (()=>{const t=S.inboxTab; S.inboxTab='awaiting'; const n=inboxFilter().length; S.inboxTab=t; return n;})(),
     action:   S.requests.reduce((n,r)=>n+myWorkItems(r,S.me).length,0),
     mine:     S.requests.filter(r=>r.requester===S.me).length,
     open:     S.requests.filter(r=>requestStatus(r)!=='COMPLETED').length,
@@ -49,7 +37,6 @@ function viewInbox(){
   <div class="tabs" role="tablist">
     <button role="tab" aria-selected="${S.inboxTab==='action'}"   data-tab="action">Awaiting my action
       ${counts.action?`<span class="pill warn">${counts.action}</span>`:`<span class="count">0</span>`}</button>
-    ${requiresApprovals()?`<button role="tab" aria-selected="${S.inboxTab==='awaiting'}" data-tab="awaiting">Awaiting my approval <span class="count">${counts.awaiting}</span></button>`:''}
     <button role="tab" aria-selected="${S.inboxTab==='mine'}"     data-tab="mine">My requests <span class="count">${counts.mine}</span></button>
     <button role="tab" aria-selected="${S.inboxTab==='open'}"     data-tab="open">All open <span class="count">${counts.open}</span></button>
     <button role="tab" aria-selected="${S.inboxTab==='all'}"      data-tab="all">Everything <span class="count">${S.requests.length}</span></button>
@@ -58,24 +45,17 @@ function viewInbox(){
     : `<div class="empty">Nothing here for ${esc(me().name)} right now. Try another tab, or switch user.</div>`}`;
 }
 function inboxRow(r){
-  const gate = evaluateGate(r);
   const failed = r.taskItems.filter(t=>t.status==='FAILED').length;
-  const appr = S.definition.executionRules.find(x=>x.kind==='approvals');
-  const hash = taskConfigHash(r);
-  const good = r.approvals.filter(a=>a.decision==='APPROVED'&&a.hash===hash).length;
-  const openCr = r.changeRequests.filter(c=>!c.resolved).length;
   const mine = myWorkItems(r,S.me).length;
   const parked = r.run && r.run.state==='WAITING';
   const bits = [`${r.taskItems.length} task${r.taskItems.length===1?'':'s'}`];
-  if(appr) bits.push(`${good} of ${appr.min} approvals`);
-  if(openCr) bits.push(`${openCr} open change request${openCr===1?'':'s'}`);
   if(failed) bits.push(`${failed} failed execution${failed===1?'':'s'}`);
   else if(parked){
     /* Name the step that is actually waiting — the flow decides what that is. */
     const w = openWorkItems(r)[0];
     bits.push(w ? (mine ? 'waiting for you — '+w.title : 'waiting — '+w.title) : 'waiting');
   }
-  else if(gate.canExecute) bits.push('ready to execute');
+  else if(requestStatus(r)==='OPEN' && r.taskItems.length) bits.push('ready to execute');
   /* In the action tab the row opens the FORM directly — the fastest path to
      acting. The request stays one click away via Show request. */
   const myWi = myWorkItems(r,S.me)[0];

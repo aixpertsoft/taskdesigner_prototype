@@ -97,6 +97,40 @@ function instantiateFlow(definition, seqBase){
     transitions:copy((step.runtimeConfig||{}).transitions||[]),
   }));
 }
+/* Creation is the FIRST gate: parameters the designer marked "required at
+   creation" are the start form — the request does not exist without them, so
+   no work item is ever needed to chase them. On a task-written field the
+   value is only the STARTING value: tasks may refine it later, which is why
+   it stays outside the approval hash. Returns an error message to show, or
+   null after creating and opening the new request. */
+function createRequest(name, values){
+  if(!name || !name.trim()) return 'Give the request a title';
+  const data = {};
+  S.definition.dataParameters.forEach(p=>{ data[p.name] = p.defaultValue; });
+  S.definition.dataParameters
+    .filter(p=>p.owner!=='EXECUTION' || p.requiredAtCreation)
+    .forEach(p=>{
+      if(values && values[p.name]!==undefined)
+        data[p.name] = p.type==='boolean' ? !!values[p.name] : values[p.name];
+    });
+  const missing = S.definition.dataParameters.find(p=>p.requiredAtCreation
+    && p.type!=='boolean' && String(data[p.name]??'').trim()==='');
+  if(missing) return `${missing.label} is required`;
+  const id='TR-'+(2088+S.seq);
+  /* The whole point of a task flow: the plan arrives already built. */
+  const items = instantiateFlow(S.definition, S.seq);
+  S.seq += items.length;
+  S.requests.unshift({
+    id, name:name.trim(), requester:S.me, createdAt:stamp(), version:1,
+    data, taskItems:items, comments:[], logs:[],
+    workItems:[], run:null,
+    history:[{at:stamp(), who:S.me,
+      text:`created this request from ${S.definition.name} — ${items.length} step${items.length===1?'':'s'} instantiated`}],
+  });
+  S.seq++; S.openRequestId=id; S.screen='request'; S.requestTab='tasks';
+  return null;
+}
+
 function seed(){
   /* The request type comes from request-types.json.js — the document the server
      would return from GET /taskrequestdefs. Its taskFlow is the ordered template
@@ -113,7 +147,7 @@ function seed(){
     defSection:'flow',
     flowOpen:null,
     openRequestId:null,
-    tipOpen:false, tipSeen:false, gateOpen:false,
+    tipOpen:false, tipSeen:false,
     seq:0,
     definition,
     /* Empty on purpose: every request in the demo is raised through the same
@@ -175,13 +209,13 @@ function tipPanel(){
   return `<div class="tip" role="dialog" aria-label="What to try">
     <h3>Try this</h3>
     <ol>
-      <li>Press <b>New task request</b> and give it a title — the whole process arrives already
-        instantiated from the request type.</li>
-      <li>The gate is red: an administrator has to approve before anything runs. Switch to
-        <b>K. Weber</b> (top right), open the request and press <b>Approve</b>.</li>
-      <li>Back as <b>M. Browett</b>, press <b>Execute all tasks</b>. It runs and stops — a person
-        has to draft the notification, and it is yours: press <b>Submit draft</b> and write it.
-        The process routes on and parks for an administrator.</li>
+      <li>Press <b>New task request</b> — it wants a title <i>and the notification subject</i>:
+        the designer demands the subject at creation. The draft step can still refine it later.
+        The whole process arrives already instantiated.</li>
+      <li>Press <b>Execute all tasks</b> — no approval gate, it runs at once and stops: a person
+        has to draft the notification, and it is yours. Press <b>Submit draft</b> and write it.
+        The process routes on and parks for an administrator — <i>that</i> approval is a step in
+        the flow.</li>
       <li>As <b>K. Weber</b>, <i>Awaiting my action</i> shows 1. Tick
         <b>Approve the wording</b> and submit — the mail sends by itself.</li>
       <li>Or answer <b>no</b> with a reason: the process walks <i>back</i> to the draft. The
@@ -246,30 +280,14 @@ document.addEventListener('click', e=>{
 
   switch(act){
     case 'toggle-tip': S.tipOpen=!S.tipOpen; S.tipSeen=true; render(); break;
-    case 'toggle-gate': S.gateOpen=!S.gateOpen; render(); break;
     case 'back': case 'back-inbox': S.mode='runtime'; S.screen='inbox'; render(); break;
     case 'close': closeModal(); break;
-    case 'approve':   approve('APPROVED'); break;
-    case 'reject':    approve('REJECTED'); break;
-    case 'unapprove': unapprove(); break;
-
-    case 'toggle-cr':{
-      const c=r.changeRequests.find(x=>x.id===btn.dataset.id);
-      c.resolved=!c.resolved;
-      note(r, c.resolved?'resolved a change request':'reopened a change request');
-      render(); toast(c.resolved?'Marked resolved':'Reopened'); break;
-    }
-    case 'post-comment': case 'post-cr':{
+    case 'post-comment':{
       const ta=$('#composer'); const text=(ta?.value||'').trim();
       if(!text){ toast('Write something first'); ta?.focus(); break; }
-      if(act==='post-comment'){
-        r.comments.push({id:'c'+(++S.seq), user:S.me, text, at:stamp()});
-        note(r,'commented');
-      }else{
-        r.changeRequests.push({id:'cr'+(++S.seq), user:S.me, text, resolved:false, at:stamp()});
-        note(r,'requested a change');
-      }
-      render(); toast(act==='post-cr'?'Change requested':'Comment added'); break;
+      r.comments.push({id:'c'+(++S.seq), user:S.me, text, at:stamp()});
+      note(r,'commented');
+      render(); toast('Comment added'); break;
     }
 
     case 'add-task':    dlgAddTask(btn.dataset.slot); break;
@@ -322,23 +340,14 @@ document.addEventListener('click', e=>{
 
     case 'new-request': dlgNewRequest(); break;
     case 'create-request':{
-      const name=($('#nr-name')?.value||'').trim();
-      if(!name){ toast('Give the request a title'); break; }
-      const id='TR-'+(2088+S.seq);
-      const data={}; S.definition.dataParameters.forEach(p=>data[p.name]=p.defaultValue);
-      /* The whole point of a task flow: the plan arrives already built. */
-      const items = instantiateFlow(S.definition, S.seq);
-      S.seq += items.length;
-      S.requests.unshift({
-        id, name, requester:S.me, createdAt:stamp(), version:1,
-        data, taskItems:items, approvals:[], changeRequests:[], comments:[], logs:[],
-        workItems:[], run:null,
-        history:[{at:stamp(), who:S.me,
-          text:`created this request from ${S.definition.name} — ${items.length} step${items.length===1?'':'s'} instantiated`}],
+      const values={};
+      document.querySelectorAll('[data-nr]').forEach(f=>{
+        values[f.dataset.nr] = f.type==='checkbox' ? f.checked : f.value;
       });
-      S.seq++; S.openRequestId=id; S.screen='request'; S.requestTab='tasks';
+      const err = createRequest(($('#nr-name')||{value:''}).value, values);
+      if(err){ toast(err); break; }
       closeModal(); render();
-      toast(`Request created with ${items.length} step${items.length===1?'':'s'}`); break;
+      toast(`Request created with ${req().taskItems.length} step${req().taskItems.length===1?'':'s'}`); break;
     }
 
   }
@@ -384,7 +393,6 @@ function missingParts(){
     ['designer/flow-step-card.js',       typeof flowStep      === 'function'],
     ['designer/flow-graph.js',           typeof flowSvg       === 'function'],
     ['designer/data-editor.js',          typeof defData       === 'function'],
-    ['designer/execution-rules-editor.js', typeof defRules    === 'function'],
   ].filter(([,ok])=>!ok).map(([f])=>f);
 }
 
@@ -435,5 +443,4 @@ function boot(){
 <script src="designer/flow-step-card.js"></script>
 <script src="designer/flow-graph.js"></script>
 <script src="designer/data-editor.js"></script>
-<script src="designer/execution-rules-editor.js"></script>
 <script>boot();</script>

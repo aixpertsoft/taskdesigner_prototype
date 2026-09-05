@@ -30,7 +30,8 @@ function dlgAddTask(slotId){
     <div class="dbody">
       <p style="margin:0;color:var(--ink-3);font-size:13px">
         These activities were configured into the process by its designer — adding one is a single
-        click, nothing to fill in. It changes the plan, so approvals will need to be given again.</p>
+        click, nothing to fill in. It is marked "added" on its card, so the deviation from the
+        standard process stays visible.</p>
       <div class="tiles">
         ${acts.map(a=>{
           const d = TASK_DEFS[a.taskDefinition];
@@ -51,7 +52,7 @@ function dlgAddTask(slotId){
 }
 
 /* A blocked step: show what is missing, and collect it. The values arrive through
-   the execution path, so they land outside the hash and the run's approvals hold. */
+   the execution path, so the frozen plan itself is untouched. */
 function dlgBlocker(workItemId){
   const r = req();
   const w = r.workItems.find(x=>x.id===workItemId);
@@ -78,13 +79,12 @@ function dlgBlocker(workItemId){
         <input type="text" data-p="${p.name}" value="${esc(r.data[p.name]??'')}">
       </div>`).join('')}
       ${frozen.length?`<div class="task-err">${I.warn}<div>
-        ${frozen.map(p=>esc(p.label)).join(', ')} — the approvals for this run cover
-        ${frozen.length===1?'this value':'these values'}, so ${frozen.length===1?'it':'they'} cannot be
-        changed mid-run. Cancel the run to edit ${frozen.length===1?'it':'them'}, then execute again.
+        ${frozen.map(p=>esc(p.label)).join(', ')} — ${frozen.length===1?'this is a requester field,':'these are requester fields,'}
+        frozen while the run is in progress. Cancel the run to edit ${frozen.length===1?'it':'them'}, then execute again.
       </div></div>`:''}
       <div style="font-size:12px;color:var(--ink-3);border-top:1px solid var(--border);padding-top:11px">
-        What you supply here is recorded as execution output — attributed to you and in the log —
-        so it does not disturb the approvals already given.
+        What you supply here is recorded as execution output — attributed to you, in the log,
+        on the audit trail.
       </div>
     </div>
     <div class="dfoot">
@@ -225,9 +225,15 @@ function dlgSign(workItemId){
           <label>${esc(p.label)} ${p.required?'<span class="req">*</span>':''}</label>
           <select data-p="${p.name}">${(p.values||[]).map(o=>
             `<option>${esc(o)}</option>`).join('')}</select></div>`;
+        /* A text field wired to a request field starts with that field's CURRENT
+           value: a creation-seeded subject arrives prefilled, and a redo after a
+           loop-back shows what was entered last time — refine, not retype. */
+        const b = (t.outputBindings||{})[p.name];
+        const cur = b && b.path ? r.data[b.path] : '';
         return `<div class="field">
           <label>${esc(p.label)} ${p.required?'<span class="req">*</span>':''}</label>
-          <input type="text" data-p="${p.name}" placeholder="${esc(p.placeholder||'')}"></div>`;
+          <input type="text" data-p="${p.name}" value="${esc(cur??'')}"
+            placeholder="${esc(p.placeholder||'')}"></div>`;
       }).join('')}
       <div style="font-size:12px;color:var(--ink-3);border-top:1px solid var(--border);padding-top:11px">
         Closing this work item lets <b>execution continue on its own</b> — under the system identity,
@@ -244,16 +250,27 @@ function dlgSign(workItemId){
 }
 
 function dlgNewRequest(){
+  /* The start form: parameters the designer marked "required at creation".
+     The request cannot exist without them — so nothing ever has to chase
+     them with a work item later. */
+  const createParams = S.definition.dataParameters.filter(p=>p.requiredAtCreation);
   openModal(`<div class="dialog" role="dialog" aria-modal="true" aria-label="New task request">
     <div class="dhead"><h2>New task request</h2>
       <button class="iconbtn" data-act="close">${I.cross}</button></div>
     <div class="dbody">
       <div class="field"><label>Request type</label>
         <select id="nr-type"><option>${esc(S.definition.name)}</option></select>
-        <span class="hint">Decides the approval rules, the statuses, and which tasks may be added.</span>
+        <span class="hint">Decides the whole process: the task flow, its data, and which
+          activities may be added.</span>
       </div>
       <div class="field"><label>Title <span class="req">*</span></label>
         <input type="text" id="nr-name" placeholder="e.g. Patch rack R14 uplinks"></div>
+      ${createParams.map(p=>p.type==='boolean'
+        ? `<label class="switch"><input type="checkbox" data-nr="${esc(p.name)}"
+             ${p.defaultValue?'checked':''}><span class="track"></span><span>${esc(p.label)}</span></label>`
+        : `<div class="field"><label>${esc(p.label)} <span class="req">*</span></label>
+             <input type="text" data-nr="${esc(p.name)}" value="${esc(p.defaultValue??'')}">
+           </div>`).join('')}
     </div>
     <div class="dfoot">
       <button class="btn" data-act="close">Cancel</button>

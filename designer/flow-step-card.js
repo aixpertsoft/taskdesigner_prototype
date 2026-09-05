@@ -11,6 +11,14 @@
    =========================================================================== */
 "use strict";
 
+/* Every role the demo users hold — the chips assignment pickers offer.
+   (Moved here from the retired execution-rules editor.) */
+function knownRoles(){
+  const set = new Set();
+  USER_ORDER.forEach(u=>USERS[u].roles.forEach(r=>set.add(r)));
+  return [...set];
+}
+
 /* The runtime half of an activity. Created lazily so a document written before
    a key existed still opens with sane defaults. */
 function rc(step){
@@ -141,8 +149,7 @@ function flowStep(step,i){
 
       <h4 class="rtsec">Runtime configuration</h4>
       <span class="hint">How the engine behaves at this activity. None of it is shown to the
-        requester — but all of it is inside the approval hash, because what an approver approved
-        includes how the process routes.</span>
+        requester, and none of it is editable by them.</span>
 
       ${m.manual?`
       <h5>Who may carry it out</h5>
@@ -258,8 +265,8 @@ function wiringRows(def, holder, i, j){
         run will block here.</span>`:''}
     </div>`;
   }).join('');
-  /* Only execution-owned fields may be written: writing a requester field
-     would move the approval hash mid-run. */
+  /* Only task-owned fields may be written: a requester's field is theirs
+     alone — a run must never overwrite it. */
   const outTargets = dataParams.filter(q=>q.owner==='EXECUTION');
   const outRows = outs.map(o=>{
     const b = (holder.outputBindings||{})[o.name] || null;
@@ -340,6 +347,16 @@ document.head.insertAdjacentHTML('beforeend', `<style>
   color:var(--accent)}
 .flowbody h5{margin:14px 0 5px;font-size:12.5px;font-weight:600;color:var(--ink)}
 .flowstep.slotstep{border-style:dashed}
+.rolepick{display:flex;gap:5px;flex-wrap:wrap}
+.rolechip{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:20px;
+  border:1px solid var(--border);background:var(--surface-2);font-size:12px;color:var(--ink-2);
+  cursor:pointer;user-select:none}
+.rolechip.on{background:var(--accent-soft);border-color:var(--accent-line);color:var(--accent);
+  font-weight:600}
+.rolechip input{position:absolute;opacity:0;pointer-events:none}
+.rulenote{display:flex;gap:9px;align-items:flex-start;margin-top:13px;padding:11px 13px;
+  background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r);
+  font-size:12.5px;color:var(--ink-2)}
 .actcard{border:1px solid var(--border);border-radius:var(--r);background:var(--surface);
   padding:8px 10px;margin-top:7px}
 .flowstep.slotstep .task-ico{color:var(--accent)}
