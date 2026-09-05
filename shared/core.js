@@ -30,6 +30,7 @@ const I = {
   play:'<svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M4.5 2.8 12.8 8l-8.3 5.2z"/></svg>',
   spin:'<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M8 1.8a6.2 6.2 0 1 1-4.4 1.8"/></svg>',
   pause:'<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><rect x="4" y="3" width="3" height="10" rx="1"/><rect x="9" y="3" width="3" height="10" rx="1"/></svg>',
+  rocket:'<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.3 10.7 5.3 6.7C6.5 3.6 9 1.6 12.6 1.4c.6 0 1 .4 1 1-.2 3.6-2.2 6.1-5.3 7.3Z"/><path d="M5.3 6.7 3 7.6 1.8 9.9l2 .3M9.3 10.7l-.9 2.3-2.3 1.2-.3-2"/><circle cx="10" cy="6" r="1.1"/></svg>',
   pen:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1.8 14.2h12.4"/><path d="M11.1 2.2a1.6 1.6 0 0 1 2.3 2.3l-7 7-3 .7.7-3z"/></svg>',
   doc:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3.4 1.8h6l3.2 3.2v9.2H3.4z"/><path d="M9.2 1.9V5h3.2M5.6 8.4h4.8M5.6 10.9h3.2"/></svg>',
   box:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1.8 4.6 8 1.8l6.2 2.8v6.8L8 14.2l-6.2-2.8z"/><path d="M1.8 4.6 8 7.4l6.2-2.8M8 7.4v6.8"/></svg>',
@@ -52,14 +53,18 @@ const USER_ORDER = ['mb','as','kw','jn'];
 /* A request's status is DERIVED from its execution, never set by hand. The
    original design had a second, user-driven state machine next to the run's —
    competing with the run for the same words. One lifecycle is enough. */
-const STATUS_TONE = {OPEN:'blue', RUNNING:'warn', COMPLETED:'ok'};
+const STATUS_TONE = {OPEN:'blue', RUNNING:'warn', COMPLETED:'ok', CLOSED:'neutral'};
 function requestStatus(r){
   /* Derived from the run, not from the items: with conditional routing, the
      activities on an untaken branch legitimately stay NOT_RUN, so "every task
      succeeded" stopped being the test. Done = the walk reached an end.
      RUNNING covers the whole in-flight life — working AND parked on a person,
      which is most of it. A failed or cancelled run falls back to OPEN: the
-     request needs attention again, and Execute can resume or restart it. */
+     request needs attention again, and Launch can resume or restart it.
+     CLOSED is the one hand-set state — the GitHub-style end for a request
+     that is never going to run: an explicit, recorded decision {by, at,
+     reason}, read-only and final. */
+  if(r.closed) return 'CLOSED';
   if(r.run && r.run.state==='COMPLETED') return 'COMPLETED';
   if(runInFlight(r)) return 'RUNNING';
   return 'OPEN';

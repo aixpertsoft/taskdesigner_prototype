@@ -78,7 +78,7 @@ approved wording is wanted — proof that *what was approved* and *what was sent
 
 **1. Run it.** The inbox starts empty. Press **New task request** — it demands a title and the
 notification subject (a *start form*: the designer marked the subject required at creation), and
-the whole process arrives already instantiated from the request type. Press **Execute all tasks**
+the whole process arrives already instantiated from the request type. Press **Launch**
 — no approval gate, it runs at once and stops immediately: step 1 needs a person. Press
 **Submit draft** and write the notification; the process routes straight to the approval — *that*
 approval is a step in the flow. As K. Weber, tick **Approve the wording**, and **Submit
@@ -101,7 +101,7 @@ produces, and which server action implements it. How values flow between them is
 
 **Real** — role checks, the input-contract blockers, and the run state machine — a
 single token walking a routed graph, parking on manual steps, looping back when an approval step
-answers no. A request's status is derived from that machine — open, running while a run is in flight, completed when the walk reaches an end — rather than
+answers no. A request's status is derived from that machine — open, running while a run is in flight, completed when the walk reaches an end, with hand-set closed (GitHub-style, reason required) as the one exception — rather than
 being a second, hand-driven state machine beside it. These are the logic described in
 [the specification](docs/specification.md), so the Execute button is genuinely blocked rather than
 merely drawn greyed out.
@@ -142,7 +142,7 @@ shared/
   core.js                             icons, demo users, helpers, derived request status
 runtime/                              the end user's application
   inbox-view.js                       the landing screen
-  request-view.js                     the request screen: cards, panes, execution bar
+  request-view.js                     the request screen: cards, panes, header actions
   dialogs.js                          every runtime modal
   run-engine.js                       execution and every mutation
 designer/                             the administrator's application

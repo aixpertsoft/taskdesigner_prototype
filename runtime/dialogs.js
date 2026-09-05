@@ -249,6 +249,30 @@ function dlgSign(workItemId){
   </div>`);
 }
 
+/* Closing a request that never ran — the GitHub-style "close without merging".
+   A closed request is read-only and final, so the dialog demands the reason:
+   the record should say why the work was abandoned, in the closer's words. */
+function dlgCloseRequest(){
+  const r = req();
+  openModal(`<div class="dialog" role="dialog" aria-modal="true" aria-label="Close this request">
+    <div class="dhead"><h2>Close this request?</h2>
+      <button class="iconbtn" data-act="close">${I.cross}</button></div>
+    <div class="dbody">
+      <p style="margin:0;color:var(--ink-3);font-size:13px">
+        <b>${esc(r.name)}</b> has not run. Closing it means the work is <b>not going to happen</b>:
+        the request becomes read-only and leaves the open lists.</p>
+      <div class="field"><label>Why is it being closed? <span class="req">*</span></label>
+        <textarea id="close-reason" rows="3"
+          placeholder="Superseded by another request — the maintenance window moved."></textarea>
+        <span class="hint">Recorded on the request, in your words — the record should say why.</span></div>
+    </div>
+    <div class="dfoot">
+      <button class="btn" data-act="close">Keep it open</button>
+      <button class="btn danger" data-act="do-close">${I.cross} Close request</button>
+    </div>
+  </div>`);
+}
+
 function dlgNewRequest(){
   /* The start form: parameters the designer marked "required at creation".
      The request cannot exist without them — so nothing ever has to chase

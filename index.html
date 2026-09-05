@@ -211,7 +211,7 @@ function tipPanel(){
       <li>Press <b>New task request</b> — it wants a title <i>and the notification subject</i>:
         the designer demands the subject at creation. The draft step can still refine it later.
         The whole process arrives already instantiated.</li>
-      <li>Press <b>Execute all tasks</b> — no approval gate, it runs at once and stops: a person
+      <li>Press <b>Launch</b> — no approval gate, it runs at once and stops: a person
         has to draft the notification, and it is yours. Press <b>Submit draft</b> and write it.
         The process routes on and parks for an administrator — <i>that</i> approval is a step in
         the flow.</li>
@@ -314,6 +314,8 @@ document.addEventListener('click', e=>{
     case 'show-submission': dlgSubmission(btn.dataset.id); break;
 
     case 'run-all': startRun(); break;
+    case 'close-request': dlgCloseRequest(); break;
+    case 'do-close': closeRequest(($('#close-reason')||{value:''}).value); break;
     case 'cancel-run': cancelRun(); break;
     case 'sign':{
       const w = r.workItems.find(x=>x.id===btn.dataset.id);

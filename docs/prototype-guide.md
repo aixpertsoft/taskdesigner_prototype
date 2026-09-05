@@ -43,8 +43,9 @@ single-user session cannot show the feature working. There are four:
 | AS | Administrator, NetOps | can do either |
 | JN | Viewer | can do neither — useful for showing what *is* locked |
 
-**Watch the bar under the task list.** It is the heart of the design: it says whether the request may
-run, what is stopping it, or who it is currently waiting for.
+**Watch the task cards.** They are the heart of the design: the card a run is parked on turns
+amber and says who it is waiting for — and carries the button to act. The header's status pill
+says what the request as a whole is doing.
 
 **Two applications, one shell.** The switch at the top left flips between **Runtime** — the end
 user's app: inbox, requests, work items — and **Designer** — the administrator's: the request type
@@ -61,7 +62,7 @@ cause-and-effect between them stays demonstrable.
 1. The inbox starts empty. Press **New task request** — it wants a title *and the notification
    subject*: the designer marked the subject **required at creation**, so the request cannot
    exist without it (the *start form*). The whole process arrives already instantiated.
-2. Press **Execute all tasks** — there is no approval gate; the process itself decides where
+2. Press **Launch** — there is no approval gate; the process itself decides where
    people are needed. It runs for half a second and **stops** — step 1 needs a person. The card
    turns amber: *Execution is parked here. Waiting for NetOps.*
 3. You are M. Browett, so it is yours. Press **Submit draft** — the subject arrives **prefilled
@@ -124,11 +125,19 @@ a document the server signed.
 
 **History** is the audit trail. Note the entries attributed to **System** — see below.
 
-### The execution bar
+### Launching a run
 
-One bar under the task list, always telling you what the run is doing: **Ready to execute**,
-**Waiting — Approve notification** with who it waits for, **Blocked — Send notification cannot
-start** with what is missing, or **All tasks completed**.
+The request's page-level actions live in the **header, top right** — the modern convention, and a
+toolbar built for more actions to join. Idle, it holds **Launch** and **Close**. While a run is
+parked it becomes **Cancel run**; completed or closed, it is empty. There is no status bar under
+the task list — run state needs no second home: the header pill says what the request is doing,
+and the parked or blocked card says who it waits for and what is missing, right where the work is.
+
+**Close** is the GitHub-style end for a request that is not going to run — available only while
+the request is open and idle, and only to its requester or an administrator. The dialog demands a
+**reason**, because a closed request is read-only and final: the record should say why the work
+was abandoned, in the closer's words. Closed requests leave *All open*, keep their reason in a
+banner on the request and in the inbox row, and wear a grey **CLOSED** pill.
 
 **There is deliberately no pre-execution approval gate.** Earlier iterations locked Execute behind
 rules — an approval quorum, no open change requests. Both were removed on purpose: *who may
@@ -141,8 +150,8 @@ UI-only control.
 
 **And there is deliberately no way to run one task by hand.** Execution happens only through a run,
 which walks the flow along its transitions and validates each action's required
-inputs. Retrying a failed step is simply *Execute all* again — a new run skips what already
-succeeded and picks up where it failed.
+inputs. Retrying a failed step is simply **Launch** again — the run resumes at the failed
+activity; nothing that already succeeded is redone.
 
 ---
 
@@ -311,11 +320,12 @@ removed — the automatic contract check covers the case people actually hit.)
 
 ### The rest of the screen
 
-**No status workflow.** A request's status is *derived*: **open** until Execute starts a run,
+**No status workflow.** A request's status is *derived*: **open** until Launch starts a run,
 **running** for the whole in-flight life — the engine working *and* parked on a person, which is
-most of it — and **completed** once the walk reaches an end, at which point authoring locks and
-approvals close. A failed or cancelled run falls back to *open*: the request needs attention again.
-The original design had
+most of it — and **completed** once the walk reaches an end, at which point authoring locks. A
+failed or cancelled run falls back to *open*: the request needs attention again. The one
+exception is **closed** — not derived, but an explicit, recorded decision (who, when, and the
+reason in their words) that the work is never going to happen. The original design had
 a second, user-driven state machine (OPEN → APPROVED → COMPLETED…), which competed with the run for
 the same words: APPROVED-the-status against the approvals rule, COMPLETED-the-status against the
 run's own completed. One lifecycle is enough. The platform's role-gated status workflow

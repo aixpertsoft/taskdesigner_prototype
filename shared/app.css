@@ -432,3 +432,8 @@ textarea[readonly]{resize:vertical;line-height:1.5}
 .footnote b{color:var(--ink-2)}
 
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+
+
+/* destructive page actions — Close request */
+.btn.danger{border-color:var(--bad);color:var(--bad)}
+.btn.danger:hover{background:var(--bad);color:#fff}

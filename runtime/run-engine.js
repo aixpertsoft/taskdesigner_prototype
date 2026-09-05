@@ -357,6 +357,20 @@ function unfillSlot(r, fillId){
    assigned person's — otherwise a mandatory step is defeated by cancelling. */
 function mayCancel(r){ return r.requester===S.me || hasRole(S.me,'Administrator'); }
 
+/* Closing — the GitHub-style end for a request that is not going to run: an
+   explicit, recorded decision, after which the request is read-only and final.
+   Only an idle, open request; only its requester or an administrator; and only
+   WITH a reason — the audit trail should say why work was abandoned. */
+function mayClose(r){ return requestStatus(r)==='OPEN' && !runInFlight(r) && mayCancel(r); }
+function closeRequest(reason){
+  const r=req();
+  if(!mayClose(r)){ toast('Only an open, idle request may be closed — by its requester or an administrator'); return; }
+  if(!reason || !reason.trim()){ toast('Give the reason — the record should say why'); return; }
+  r.closed = {by:S.me, at:stamp(), reason:reason.trim()};
+  note(r,`closed this request — ${reason.trim()}`);
+  closeModal(); render(); toast('Request closed');
+}
+
 function cancelRun(){
   const r=req(); if(!runInFlight(r)) return;
   if(!mayCancel(r)){ toast('Only the requester or an administrator may cancel a run'); return; }

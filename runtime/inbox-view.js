@@ -16,14 +16,14 @@ function inboxFilter(){
     return S.requests.filter(r=>myWorkItems(r,m).length>0);
   }
   if(S.inboxTab==='mine')   return S.requests.filter(r=>r.requester===m);
-  if(S.inboxTab==='open')   return S.requests.filter(r=>requestStatus(r)!=='COMPLETED');
+  if(S.inboxTab==='open')   return S.requests.filter(r=>['OPEN','RUNNING'].includes(requestStatus(r)));
   return S.requests;
 }
 function viewInbox(){
   const counts = {
     action:   S.requests.reduce((n,r)=>n+myWorkItems(r,S.me).length,0),
     mine:     S.requests.filter(r=>r.requester===S.me).length,
-    open:     S.requests.filter(r=>requestStatus(r)!=='COMPLETED').length,
+    open:     S.requests.filter(r=>['OPEN','RUNNING'].includes(requestStatus(r))).length,
   };
   const list = inboxFilter();
   return `
@@ -49,13 +49,14 @@ function inboxRow(r){
   const mine = myWorkItems(r,S.me).length;
   const parked = r.run && r.run.state==='WAITING';
   const bits = [`${r.taskItems.length} task${r.taskItems.length===1?'':'s'}`];
-  if(failed) bits.push(`${failed} failed execution${failed===1?'':'s'}`);
+  if(r.closed) bits.push(`closed — ${r.closed.reason}`);
+  else if(failed) bits.push(`${failed} failed execution${failed===1?'':'s'}`);
   else if(parked){
     /* Name the step that is actually waiting — the flow decides what that is. */
     const w = openWorkItems(r)[0];
     bits.push(w ? (mine ? 'waiting for you — '+w.title : 'waiting — '+w.title) : 'waiting');
   }
-  else if(requestStatus(r)==='OPEN' && r.taskItems.length) bits.push('ready to execute');
+  else if(requestStatus(r)==='OPEN' && r.taskItems.length) bits.push('ready to launch');
   /* In the action tab the row opens the FORM directly — the fastest path to
      acting. The request stays one click away via Show request. */
   const myWi = myWorkItems(r,S.me)[0];

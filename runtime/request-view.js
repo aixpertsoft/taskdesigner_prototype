@@ -18,6 +18,7 @@ function viewRequest(){
     <div class="rq-title">
       <span class="pill ${STATUS_TONE[requestStatus(r)]}">${requestStatus(r)}</span>
       <h1>${esc(r.name)}</h1>
+      <div class="rq-actions">${requestActions(r)}</div>
     </div>
     <div class="rq-sub">
       <span class="mono">${r.id}</span><span>·</span>
@@ -25,6 +26,8 @@ function viewRequest(){
       <span>opened by ${esc(USERS[r.requester].name)}</span><span>·</span>
       <span>${esc(r.createdAt)}</span>
     </div>
+    ${r.closed?`<div class="databar" style="margin-top:10px">${I.cross} <b>Closed</b> by
+      ${esc(USERS[r.closed.by].name)} · ${esc(r.closed.at)} — ${esc(r.closed.reason)}</div>`:''}
   </div>
 
   <div class="tabs" role="tablist">
@@ -48,13 +51,12 @@ function paneTasks(r){
   /* A run in flight freezes the plan: the hash it is executing must not move
      under it, or half a plan runs under terms nobody approved. The only way a
      requester extends a plan is a placeholder slot the designer put there. */
-  const locked = requestStatus(r)==='COMPLETED'||runInFlight(r);
+  const locked = requestStatus(r)==='COMPLETED'||requestStatus(r)==='CLOSED'||runInFlight(r);
   return `<div class="tasklist">
     ${r.taskItems.length
       ? r.taskItems.map(t=>t.kind==='PLACEHOLDER' ? slotCard(r,t,locked) : taskCard(r,t,locked)).join('')
       : `<div class="empty">No tasks yet. A request needs at least one task before it can be executed.</div>`}
-  </div>
-  ${gateBox(r)}`;
+  </div>`;
 }
 
 /* A placeholder slot: the designed extension point, rendered as the Add button
@@ -160,9 +162,9 @@ function taskCard(r,t,locked){
 }
 
 function paneData(r){
-  const frozen = runInFlight(r);
+  const frozen = runInFlight(r) || !!r.closed;
   return `<div class="card">
-    ${frozen?`<div class="databar">${I.pause} A run is in progress, so your fields are frozen
+    ${runInFlight(r)?`<div class="databar">${I.pause} A run is in progress, so your fields are frozen
       until it ends. Values a blocked step needs are supplied through the work item.</div>`:''}
     <div class="formgrid">
     ${S.definition.dataParameters.map(p=>{
@@ -235,41 +237,25 @@ function paneHist(r){
   </div></div>`;
 }
 
-function gateBox(r){
-  const running = r.taskItems.some(t=>t.status==='RUNNING');
-  const waiting = r.run && r.run.state==='WAITING' ? openWorkItems(r)[0] : null;
-  const allDone = requestStatus(r)==='COMPLETED';
-  const canRun  = r.taskItems.length>0 && !runInFlight(r) && !allDone;
-
-  /* The run-state bar. There is deliberately no approval gate any more: WHO
-     may execute is a user-permission question in the real system, and
-     approval, where a process needs one, is an activity inside the flow. What
-     still stops a run is the process itself — manual steps, and required
-     inputs that resolve to nothing. */
-  const head = waiting
-    ? `<span class="gi pausing">${I.pause}</span>
-       <span>${esc(waiting.kind==='BLOCKER' ? 'Blocked — '+waiting.title : 'Waiting — '+waiting.title)} <span class="gsub">— ${esc(eligibleFor(waiting).map(u=>USERS[u].name).join(' or '))}${
-         waiting.dueAt?`, due ${esc(waiting.dueAt)}`:''}</span></span>`
-    : allDone
-    ? `<span class="gi">${I.check}</span><span>All tasks completed <span class="gsub">— nothing left to run</span></span>`
-    : r.taskItems.length
-    ? `<span class="gi">${I.check}</span><span>Ready to execute <span class="gsub">— the run pauses wherever the process needs a person</span></span>`
-    : `<span class="gi">${I.warn}</span><span>No tasks <span class="gsub">— a request needs at least one task to run</span></span>`;
-
-  const action = waiting
-    ? `<button class="btn ghost" data-act="cancel-run" ${mayCancel(r)?'':'disabled'}
-         title="${mayCancel(r)?'Abandon the run and unlock the request for editing'
-                             :'Only the requester or an administrator may cancel a run'}">Cancel run</button>`
-    : `<button class="btn ${canRun?'go':''}" data-act="run-all"
-         ${canRun&&!running?'':'disabled'}
-         title="${canRun?'Run every task that has not succeeded yet':'Nothing to run'}">
-         ${running?I.spin+' Running…':I.play+' Execute all tasks'}
-       </button>`;
-
-  return `<section class="gate ${waiting?'parked':canRun?'open':''}">
-    <div class="gate-bar">
-      <div class="gate-toggle" style="cursor:default">${head}</div>
-      ${action}
-    </div>
-  </section>`;
+/* The header toolbar: the request's page-level actions, top right — the
+   modern convention, and a row that future actions (Close, …) slot into.
+   There is no status text here and no bar under the task list any more:
+   run state lives in the status pill, and the parked or blocked detail lives
+   on the task card it belongs to. */
+function requestActions(r){
+  if(runInFlight(r)){
+    if(r.run.state==='RUNNING') return `<button class="btn" disabled>${I.spin} Running…</button>`;
+    return `<button class="btn ghost" data-act="cancel-run" ${mayCancel(r)?'':'disabled'}
+      title="${mayCancel(r)?'Abandon the run and unlock the request for editing'
+                          :'Only the requester or an administrator may cancel a run'}">Cancel run</button>`;
+  }
+  if(r.closed || requestStatus(r)==='COMPLETED' || !r.taskItems.length) return '';
+  const failed = r.run && r.run.state==='FAILED';
+  return `<button class="btn ghost" data-act="close-request" ${mayClose(r)?'':'disabled'}
+      title="${mayClose(r)?'Close without running — the work is not going to happen'
+                         :'Only the requester or an administrator may close a request'}">Close</button>
+    <button class="btn go" data-act="run-all"
+      title="${failed?'Launch again — resumes at the failed step'
+                    :'Start the run — it pauses wherever the process needs a person'}">
+      ${I.rocket} Launch</button>`;
 }
