@@ -437,3 +437,14 @@ textarea[readonly]{resize:vertical;line-height:1.5}
 /* destructive page actions — Close request */
 .btn.danger{border-color:var(--bad);color:var(--bad)}
 .btn.danger:hover{background:var(--bad);color:#fff}
+
+/* the Data tab's internal-fields debug view */
+.dbgwrap{margin-top:14px;border-top:1px solid var(--border);padding-top:10px}
+.dbgtoggle{display:flex;gap:7px;align-items:center;background:none;border:0;cursor:pointer;
+  color:var(--ink-3);font-size:12.5px;padding:2px 0}
+.dbgtoggle:hover{color:var(--ink)}
+.dbggrid{margin-top:8px;display:grid;gap:4px}
+.dbgrow{display:grid;grid-template-columns:180px 160px 1fr;gap:10px;font-size:12px;
+  color:var(--ink-2);padding:4px 8px;background:var(--surface-2);border-radius:var(--r)}
+.dbgrow .mono{word-break:break-all}
+@media (max-width:700px){.dbgrow{grid-template-columns:1fr;gap:1px}}

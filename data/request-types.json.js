@@ -17,6 +17,13 @@
        EXECUTION  written by a task through an output binding. Outside the hash
                   — which is why a run does not dismiss its own approvals.
 
+     dataParameters[].internal
+       Presentation only: the field stays off the request's Data tab and shows
+       instead in its read-only "Internal fields" section — plumbing the run
+       writes (a fingerprint, a message id) that a requester never edits.
+       Work-item forms, blockers and a step's "Shown to the person" list are
+       unaffected. Absent = visible.
+
      dataParameters[].requiredAtCreation
        The "start form": the New-request dialog demands this field and creation
        is refused without it — data the process cannot exist without never
@@ -127,9 +134,9 @@ window.REQUEST_TYPES = {
         {"name": "recipients", "label": "Recipients", "type": "text", "owner": "EXECUTION",
          "defaultValue": ""},
         {"name": "sha256", "label": "Fingerprint (SHA-256)", "type": "text", "owner": "EXECUTION",
-         "defaultValue": ""},
+         "internal": true, "defaultValue": ""},
         {"name": "signedAt", "label": "Signed at", "type": "text", "owner": "EXECUTION",
-         "defaultValue": ""},
+         "internal": true, "defaultValue": ""},
         {"name": "approved", "label": "Wording approved", "type": "boolean", "owner": "EXECUTION",
          "defaultValue": false},
         {"name": "approvalNote", "label": "Approver comment", "type": "text", "owner": "EXECUTION",
@@ -137,7 +144,7 @@ window.REQUEST_TYPES = {
         {"name": "sendStatus", "label": "Delivery status", "type": "text", "owner": "EXECUTION",
          "defaultValue": ""},
         {"name": "messageId", "label": "Message id", "type": "text", "owner": "EXECUTION",
-         "defaultValue": ""}
+         "internal": true, "defaultValue": ""}
       ],
 
       "taskFlow": [

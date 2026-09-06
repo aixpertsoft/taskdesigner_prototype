@@ -146,7 +146,7 @@ function seed(){
     defSection:'flow',
     flowOpen:null,
     openRequestId:null,
-    tipOpen:false, tipSeen:false,
+    tipOpen:false, tipSeen:false, dataDebugOpen:false,
     seq:0,
     definition,
     /* Empty on purpose: every request in the demo is raised through the same
@@ -315,6 +315,7 @@ document.addEventListener('click', e=>{
 
     case 'run-all': startRun(); break;
     case 'close-request': dlgCloseRequest(); break;
+    case 'toggle-data-debug': S.dataDebugOpen=!S.dataDebugOpen; render(); break;
     case 'do-close': closeRequest(($('#close-reason')||{value:''}).value); break;
     case 'cancel-run': cancelRun(); break;
     case 'sign':{

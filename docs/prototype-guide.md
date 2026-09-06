@@ -121,7 +121,11 @@ The requester's job is deliberately small: raise the request and do their manual
 **Data** is the interesting one during a run. Two fields are yours to edit — the maintenance window
 and the affected system. The rest are marked **written by a task** and are read-only: they are written
 by a task, through the output wiring the request type declares. If a requester could type into them, they could forge the fingerprint of
-a document the server signed.
+a document the server signed. Fields the designer marked **internal** — pure plumbing like the
+fingerprint, the signing timestamp, the mail server's message id — do not appear on the tab at
+all; they sit under a collapsed **Internal fields** section at the bottom, read-only, name and
+value, for whoever needs to look under the hood. The requester reads outcomes; the run reads
+plumbing.
 
 **History** is the audit trail. Note the entries attributed to **System** — see below.
 
@@ -338,12 +342,13 @@ forge what the server produced). Either kind can additionally be marked **at cre
 dialog becomes a *start form* that refuses to create without it — data the process cannot exist
 without never needs a work item to chase it. On a task-written field that is only the *starting*
 value: tasks may refine it later, and their forms arrive prefilled with what is there — which is how
-the demo's subject is demanded at creation yet still editable in the draft step. The list is fully
-editable — label, type, owner and default
-inline, new fields via *Add parameter*. Deleting a field is refused while anything still references
-it by name — a wiring binding, a transition, a display list — with the references listed, since
-a silent delete would break those bindings without a trace. Names themselves are fixed once created,
-for the same reason.
+the demo's subject is demanded at creation yet still editable in the draft step. The section is a
+clean **list** — each row shows the parameter's label, id and property pills — and clicking one
+opens the **one dialog** that edits everything about it: label, type, who provides the value,
+default, and the two flags. Delete lives in that dialog too, disabled while anything still
+references the field by name — a wiring binding, a transition, a display list — with the
+references listed right there, since a silent delete would break those bindings without a trace.
+Names themselves are fixed once created, for the same reason.
 
 **There are no rules any more — at all.** Earlier iterations gated the whole run behind
 pre-execution rules (an approval quorum, no open change requests) and let a step declare *do not

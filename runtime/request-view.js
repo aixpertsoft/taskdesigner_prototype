@@ -167,7 +167,7 @@ function paneData(r){
     ${runInFlight(r)?`<div class="databar">${I.pause} A run is in progress, so your fields are frozen
       until it ends. Values a blocked step needs are supplied through the work item.</div>`:''}
     <div class="formgrid">
-    ${S.definition.dataParameters.map(p=>{
+    ${S.definition.dataParameters.filter(p=>!p.internal).map(p=>{
       const v = r.data[p.name];
       /* EXECUTION fields are written by a task through the output wiring — read-only
          here, or a requester could forge what the server produced. AUTHOR fields
@@ -198,6 +198,26 @@ function paneData(r){
       </div>`;
     }).join('')}
     </div>
+    ${(()=>{
+      /* The debug view: fields marked internal are plumbing the run writes —
+         a requester never edits them, but they must stay inspectable, or the
+         prototype hides what it is doing. Read-only, one click away. */
+      const internal = S.definition.dataParameters.filter(p=>p.internal);
+      if(!internal.length) return '';
+      return `<div class="dbgwrap">
+        <button class="dbgtoggle" data-act="toggle-data-debug" aria-expanded="${!!S.dataDebugOpen}">
+          ${S.dataDebugOpen?'▾':'▸'} Internal fields <span class="count">${internal.length}</span>
+          <span class="gsub">— plumbing the run writes; shown for debugging</span>
+        </button>
+        ${S.dataDebugOpen?`<div class="dbggrid">
+          ${internal.map(p=>`<div class="dbgrow">
+            <span>${esc(p.label)}</span>
+            <span class="mono">${esc(p.name)}</span>
+            <span class="mono">${r.data[p.name]===''||r.data[p.name]==null?'—':esc(String(r.data[p.name]))}</span>
+          </div>`).join('')}
+        </div>`:''}
+      </div>`;
+    })()}
   </div>`;
 }
 
