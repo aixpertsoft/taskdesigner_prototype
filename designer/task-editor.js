@@ -379,30 +379,40 @@ function teList(){
     the request type's task flow.</p>`;
 }
 
-/* ---- one row of the form-field editor (manual tasks) ---- */
-function fieldRows(list, which){
+/* ---- the form-field list (manual tasks): rows, edited in one dialog ---- */
+function fieldRows(list){
   if(!list.length) return `<div class="empty" style="padding:14px">No fields yet.</div>`;
-  return list.map((p,i)=>`
-    <div class="te-field">
-      <span class="te-num mono">${i+1}</span>
-      <input type="text" data-te-f="${which}" data-i="${i}" data-k="name"  value="${esc(p.name||'')}"  placeholder="name" style="width:120px">
-      <input type="text" data-te-f="${which}" data-i="${i}" data-k="label" value="${esc(p.label||'')}" placeholder="label" style="width:150px">
-      <select data-te-f="${which}" data-i="${i}" data-k="type" style="width:auto">
-        ${['text','enum','boolean'].map(t=>`<option ${p.type===t?'selected':''}>${t}</option>`).join('')}
-      </select>
-      ${p.type==='enum'
-        ? `<input type="text" data-te-f="${which}" data-i="${i}" data-k="values"
-             value="${esc((p.values||[]).join(', '))}" placeholder="option, option" style="flex:1;min-width:120px">`
-        : `<input type="text" data-te-f="${which}" data-i="${i}" data-k="placeholder"
-             value="${esc(p.placeholder||'')}" placeholder="placeholder" style="flex:1;min-width:120px">`}
-      <span class="flags">
-        ${[['required','required','Must have a value']].map(([k,txt,tip])=>
-          `<label class="flagchip ${p[k]?'on':''}" title="${tip}">
-            <input type="checkbox" data-te-f="${which}" data-i="${i}" data-k="${k}" ${p[k]?'checked':''}>${txt}
-          </label>`).join('')}
-      </span>
-      <button class="btn sm ico" data-te="del-field" data-f="${which}" data-i="${i}" title="Remove field">${I.trash}</button>
-    </div>`).join('');
+  return `<div class="rows">${list.map((p,i)=>`
+    <div class="row" data-te="ff-edit" data-i="${i}" tabindex="0" role="button">
+      <div class="rmain">
+        <div class="rtitle"><strong>${esc(p.label||p.name||'—')}</strong>
+          <span class="id mono">${esc(p.name)}</span></div>
+        <div class="rmeta">
+          <span class="pill neutral">${p.type==='boolean'?'yes / no':p.type==='enum'?'choice':'text'}</span>
+          ${p.required?`<span class="pill warn">required</span>`:''}
+          ${p.type==='enum'&&(p.values||[]).length?`<span class="dot">·</span><span>${esc((p.values||[]).join(', '))}</span>`:''}
+        </div>
+      </div>
+    </div>`).join('')}</div>`;
+}
+
+/* Where a form field's ANSWER is wired: steps and slot activities of the live
+   request type that use this task type may store it by name. Renaming or
+   deleting the field would break that wiring silently — so names are fixed
+   and delete is guarded, exactly like a data parameter. */
+function formFieldUses(fieldName){
+  if(!E.original) return [];
+  const uses=[];
+  const scan=(holder,where)=>{
+    if((holder.outputBindings||{})[fieldName]) uses.push(`${where} stores it (output binding)`);
+  };
+  (S.definition.taskFlow||[]).forEach(st=>{
+    if(st.taskDefinition===E.original) scan(st,`step "${stepMeta(st).label}"`);
+    (st.possibleActivities||[]).forEach(a=>{
+      if(a.taskDefinition===E.original) scan(a,`activity "${a.label||a.taskDefinition}"`);
+    });
+  });
+  return uses;
 }
 
 /* ---- signature rows: names and requiredness fixed by the action, labels
@@ -423,7 +433,6 @@ function sigRows(list, which){
 function teEditor(){
   const d = E.draft;
   const action = SERVER_ACTIONS[d.action];
-  const issues = defIssues(d);
 
   return `
   <div class="rq-head">
@@ -438,7 +447,7 @@ function teEditor(){
     </div>
   </div>
 
-  <div class="te-body">
+  <div class="te-body ${d.kind==='SERVER'?'':'norail'}">
     <div style="display:grid;gap:12px">
 
       <section class="panel">
@@ -514,13 +523,16 @@ function teEditor(){
       ${d.kind==='MANUAL'?`
       <section class="panel">
         <div class="panel-head"><h3>Form fields</h3>
-          <span class="pill neutral">${(d.resultParams||[]).length}</span></div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <span class="pill neutral">${(d.resultParams||[]).length}</span>
+            <button class="btn sm" data-te="form-preview">${I.eye} Form preview</button>
+          </div></div>
         <div class="panel-body">
           <span class="hint">The form shown to the person carrying out the step — a subject and a
             message, or just a comment. What they enter is what this task <b>produces</b>; the
             request type decides where each answer is stored.</span>
-          ${fieldRows(d.resultParams||[],'resultParams')}
-          <button class="btn sm" data-te="add-field" data-f="resultParams">${I.plus} Add field</button>
+          ${fieldRows(d.resultParams||[])}
+          <button class="btn sm" data-te="ff-add">${I.plus} Add field</button>
           <div class="field" style="margin-top:4px">
             <label>Button that closes it</label>
             <input type="text" data-te-d="completeLabel" value="${esc(d.completeLabel||'Complete')}"
@@ -531,13 +543,13 @@ function teEditor(){
       </section>`:''}
     </div>
 
-    <aside class="rail"><div id="te-preview">${previewHTML(d,issues)}</div></aside>
+    ${d.kind==='SERVER'?`<aside class="rail"><div id="te-preview">${previewHTML(d)}</div></aside>`:''}
   </div>`;
 }
 
-function previewHTML(d, issues){
-  issues = issues || defIssues(d);
+function previewHTML(d){
   return `
+  ${d.kind==='SERVER'?`
   <section class="panel">
     <div class="panel-head"><h3>The signature</h3></div>
     <div class="panel-body">
@@ -551,31 +563,9 @@ function previewHTML(d, issues){
       <span class="hint">A pure function: no request in sight. Each request type wires it —
         where inputs come from, which outputs are kept.</span>
     </div>
-  </section>
-
-  ${d.kind==='MANUAL'?`
-  <section class="panel">
-    <div class="panel-head"><h3>The form the person gets</h3></div>
-    <div class="panel-body">
-      ${(d.resultParams||[]).length ? (d.resultParams||[]).map(p=>`
-        <div class="field">
-          <label>${esc(p.label||p.name||'—')} ${p.required?'<span class="req">*</span>':''}</label>
-          <input type="text" disabled placeholder="${esc(p.placeholder||'')}">
-        </div>`).join('')
-        : `<div style="font-size:12.5px;color:var(--ink-3)">No form fields yet.</div>`}
-      <span class="hint">A boolean answer here is what the flow's transitions route on.</span>
-    </div>
   </section>`:''}
 
-  <section class="panel">
-    <div class="panel-head"><h3>Ready?</h3>
-      <span class="pill ${issues.length?'bad':'ok'}">${issues.length?`${issues.length} to fix`:'valid'}</span></div>
-    <div class="panel-body">
-      ${issues.length
-        ? issues.map(x=>`<div class="grule fail"><span class="gi">${I.cross}</span><span class="gt">${esc(x)}</span></div>`).join('')
-        : `<div class="grule pass"><span class="gi">${I.check}</span><span class="gt">This task type can be used in a request type.</span></div>`}
-    </div>
-  </section>`;
+`;
 }
 
 function paintPreview(){
@@ -584,6 +574,88 @@ function paintPreview(){
 }
 
 /* ============================ dialogs ============================ */
+/* One dialog for a form field's whole life: add (i === null) and edit.
+   Nothing changes until Save reads the inputs back — Cancel is free. */
+function dlgFormField(i){
+  const d = E.draft; if(!d) return;
+  const p = i==null ? null : (d.resultParams||[])[i];
+  const uses = p ? formFieldUses(p.name) : [];
+  openModal(`<div class="dialog" role="dialog" aria-modal="true" aria-label="${p?'Edit':'Add'} form field">
+    <div class="dhead"><h2>${p?`Edit ${esc(p.label||p.name)}`:'Add a form field'}</h2>
+      <button class="iconbtn" data-act="close">${I.cross}</button></div>
+    <div class="dbody">
+      <div class="field"><label>Name ${p?'':'<span class="req">*</span>'}</label>
+        <input type="text" id="ff-name" value="${esc(p?p.name:'')}" ${p?'disabled':''}
+          placeholder="comment">
+        <span class="hint">${p?'Fixed once created — request types wire the answer by this id.'
+          :'The id request types will wire the answer by — letters and digits, fixed once created.'}</span></div>
+      <div class="field"><label>Label <span class="req">*</span></label>
+        <input type="text" id="ff-label" value="${esc(p?p.label||'':'')}" placeholder="Comment"></div>
+      <div class="field"><label>Type</label>
+        <select id="ff-type">
+          <option value="text" ${!p||p.type==='text'?'selected':''}>text</option>
+          <option value="boolean" ${p&&p.type==='boolean'?'selected':''}>yes / no</option>
+          <option value="enum" ${p&&p.type==='enum'?'selected':''}>choice</option>
+        </select></div>
+      <div class="field"><label>Choices</label>
+        <input type="text" id="ff-values" value="${esc(p?(p.values||[]).join(', '):'')}"
+          placeholder="option, option">
+        <span class="hint">Only for a choice field — comma-separated.</span></div>
+      <div class="field"><label>Placeholder</label>
+        <input type="text" id="ff-placeholder" value="${esc(p?p.placeholder||'':'')}"
+          placeholder="Shown greyed in the empty field">
+        <span class="hint">Only for a text field.</span></div>
+      <label class="switch"><input type="checkbox" id="ff-required" ${p&&p.required?'checked':''}>
+        <span class="track"></span><span style="font-size:12.5px">Must be answered</span></label>
+      ${p&&uses.length?`<div class="ctxbox">
+        <h4>Where the answer is stored</h4>
+        ${uses.map(u=>`<div class="ctxrow"><span>${esc(u)}</span></div>`).join('')}
+      </div>`:''}
+    </div>
+    <div class="dfoot">
+      ${p?`<button class="btn danger" data-te="ff-delete" data-i="${i}"
+        ${uses.length?'disabled':''} style="margin-right:auto"
+        title="${uses.length?`The answer is wired: ${esc(uses[0])}`:'Remove this field'}">
+        ${I.trash} Delete</button>`:''}
+      <button class="btn" data-act="close">Cancel</button>
+      <button class="btn primary" data-te="ff-save" ${p?`data-i="${i}"`:''}>
+        ${p?'Save':'Add field'}</button>
+    </div>
+  </div>`);
+}
+
+/* The form preview, on demand: what the person carrying out this step will
+   get, rendered exactly — switches for yes / no answers, the closing verb on
+   the confirm button. Kept out of the editor itself to keep it quiet. */
+function dlgFormPreview(){
+  const d = E.draft; if(!d) return;
+  openModal(`<div class="dialog" role="dialog" aria-modal="true" aria-label="Form preview">
+    <div class="dhead"><h2>${esc(d.label||'This task')} — the form the person gets</h2>
+      <button class="iconbtn" data-act="close">${I.cross}</button></div>
+    <div class="dbody">
+      ${(d.resultParams||[]).length ? (d.resultParams||[]).map(p=>{
+        if(p.type==='boolean') return `<div class="field">
+          <label>${esc(p.label||p.name||'—')} ${p.required?'<span class="req">*</span>':''}</label>
+          <label class="switch"><input type="checkbox" disabled><span class="track"></span><span>Yes</span></label></div>`;
+        if(p.type==='enum') return `<div class="field">
+          <label>${esc(p.label||p.name||'—')} ${p.required?'<span class="req">*</span>':''}</label>
+          <select disabled>${(p.values||[]).map(v=>`<option>${esc(v)}</option>`).join('')}</select></div>`;
+        return `<div class="field">
+          <label>${esc(p.label||p.name||'—')} ${p.required?'<span class="req">*</span>':''}</label>
+          <input type="text" disabled placeholder="${esc(p.placeholder||'')}"></div>`;
+      }).join('') : `<div class="empty" style="padding:14px">No form fields yet.</div>`}
+      ${(d.resultParams||[]).some(p=>p.type==='boolean')
+        ? `<span class="hint">The yes / no answer is what a flow's transitions can route on —
+            approved routes forward, not approved walks back.</span>`:''}
+    </div>
+    <div class="dfoot">
+      <button class="btn" data-act="close">Close</button>
+      <button class="btn go" disabled title="How the closing button will read">
+        ${I.check} ${esc(d.completeLabel||'Complete')}</button>
+    </div>
+  </div>`);
+}
+
 function dlgExport(){
   openModal(`<div class="dialog wide" role="dialog" aria-modal="true" aria-label="Export">
     <div class="dhead"><h2>task-definitions.json</h2>
@@ -625,6 +697,7 @@ document.addEventListener('click', e=>{
     case 'back':   E.screen='list'; E.draft=null; E.original=null; render(); break;
     case 'save':   saveDraft(); break;
     case 'delete': deleteDef(btn.dataset.name); E.screen='list'; E.draft=null; render(); break;
+    case 'form-preview': dlgFormPreview(); break;
     case 'export': dlgExport(); break;
     case 'import': dlgImport(); break;
     case 'copy':{
@@ -648,15 +721,34 @@ document.addEventListener('click', e=>{
     case 'kind':
       d.kind = btn.dataset.v;
       syncSignature(d); render(); break;
-    case 'add-field':{
-      const f = btn.dataset.f;
-      if(!d[f]) d[f]=[];
-      d[f].push({name:'', label:'', type:'text', required:false});
-      render(); break;
+    case 'ff-add': dlgFormField(null); break;
+    case 'ff-edit': dlgFormField(+btn.dataset.i); break;
+    case 'ff-delete':{
+      const i = +btn.dataset.i;
+      if(formFieldUses(d.resultParams[i].name).length){ toast('The answer is wired in the request type'); break; }
+      d.resultParams.splice(i,1);
+      closeModal(); render(); toast('Field removed'); break;
     }
-    case 'del-field':{
-      d[btn.dataset.f].splice(+btn.dataset.i,1);
-      render(); break;
+    case 'ff-save':{
+      const editing = btn.dataset.i!==undefined ? d.resultParams[+btn.dataset.i] : null;
+      const name = editing ? editing.name : (document.getElementById('ff-name')||{value:''}).value.trim();
+      const label = (document.getElementById('ff-label')||{value:''}).value.trim();
+      const type = (document.getElementById('ff-type')||{value:'text'}).value;
+      if(!editing){
+        if(!/^[A-Za-z][A-Za-z0-9]*$/.test(name)){ toast('The name must be letters and digits, starting with a letter'); break; }
+        if((d.resultParams||[]).some(p=>p.name===name)){ toast(`"${name}" already exists`); break; }
+      }
+      if(!label){ toast('Give it a label'); break; }
+      const p = editing || {name};
+      p.label = label; p.type = type;
+      p.required = !!(document.getElementById('ff-required')||{}).checked;
+      if(type==='enum') p.values = (document.getElementById('ff-values')||{value:''}).value
+        .split(',').map(x=>x.trim()).filter(Boolean);
+      else delete p.values;
+      if(type==='text') p.placeholder = (document.getElementById('ff-placeholder')||{value:''}).value;
+      else delete p.placeholder;
+      if(!editing){ d.resultParams = d.resultParams||[]; d.resultParams.push(p); }
+      closeModal(); render(); toast(editing?'Field saved':'Field added'); break;
     }
   }
 });
@@ -672,17 +764,6 @@ document.addEventListener('change', e=>{
     if(['action','icon'].includes(el.dataset.teD)){ render(); return; }
     paintPreview(); return;
   }
-  if(el.dataset.teF){
-    const list = d[el.dataset.teF], p = list[+el.dataset.i], k = el.dataset.k;
-    /* The flag chips show their state through the .on class, which only a full
-       render rebuilds — the checkbox inside them is invisible. So a flag toggle
-       must render, not just repaint the preview, or the chip lags a click behind. */
-    if(k==='required'){ p[k] = el.checked; render(); return; }
-    if(k==='values') p.values = el.value.split(',').map(s=>s.trim()).filter(Boolean);
-    else p[k] = el.value;
-    if(k==='type'){ render(); return; }
-    paintPreview(); return;
-  }
   if(el.dataset.teSig){
     d[el.dataset.teSig][+el.dataset.i][el.dataset.k] = el.value;
     paintPreview(); return;
@@ -692,12 +773,6 @@ document.addEventListener('change', e=>{
 document.addEventListener('input', e=>{
   const el = e.target; const d = E.draft; if(!d) return;
   if(el.dataset.teD){ d[el.dataset.teD] = el.value; paintPreview(); return; }
-  if(el.dataset.teF && el.type==='text'){
-    const p = d[el.dataset.teF][+el.dataset.i], k = el.dataset.k;
-    if(k==='values') p.values = el.value.split(',').map(s=>s.trim()).filter(Boolean);
-    else p[k] = el.value;
-    paintPreview(); return;
-  }
   if(el.dataset.teSig && el.type==='text'){
     d[el.dataset.teSig][+el.dataset.i][el.dataset.k] = el.value;
     paintPreview(); return;

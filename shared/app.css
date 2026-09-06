@@ -448,3 +448,6 @@ textarea[readonly]{resize:vertical;line-height:1.5}
   color:var(--ink-2);padding:4px 8px;background:var(--surface-2);border-radius:var(--r)}
 .dbgrow .mono{word-break:break-all}
 @media (max-width:700px){.dbgrow{grid-template-columns:1fr;gap:1px}}
+
+/* a manual task type has no rail — the form preview is a dialog */
+.te-body.norail{grid-template-columns:1fr}
